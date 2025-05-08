@@ -88,30 +88,23 @@ def normalise_cmaps(input_path, sample, coords_type):
     data = get_polar_coords(input_path, sample, coords_type)
     norm_mi0 = Normalize(
         vmin=data['intensities_0'].quantile(0.01),
-        vmax=data['intensities_0'].quantile(0.99)
-    )
+        vmax=data['intensities_0'].quantile(0.99))
     norm_mi1 = Normalize(
         vmin=data['intensities_1'].quantile(0.1),
-        vmax=data['intensities_1'].quantile(0.9)
-    )
+        vmax=data['intensities_1'].quantile(0.9))
+    norm_theta = None
+    norm_phi = None
 
     if coords_type == 'polar' or coords_type == 'cylindrical':
         norm_theta = Normalize(
             vmin=data['theta_angle'].min(),
-            vmax=data['theta_angle'].max()
-        )
+            vmax=data['theta_angle'].max())
 
         if coords_type == 'polar':
             norm_phi = Normalize(
                 vmin=data['phi_angle'].min(),
-                vmax=data['phi_angle'].max()
-            )
-
-        else:
-            norm_phi = None
-    else:
-        norm_theta = None
-        norm_phi = None
+                vmax=data['phi_angle'].max())
+            
     return norm_mi0, norm_mi1, norm_theta, norm_phi
 
 # Creating scatter plots
@@ -149,16 +142,15 @@ def main(**kwargs):
                     c=data[colour_fields[i]] if channel == 0 else data[colour_fields[i+4]],
                     cmap='inferno' if i == 0 or i == 1 else 'RdBu',
                     norm=norms[i] if channel == 0 else norms[i+4],
-                    s=1
-                )
+                    s=1)
                 fig.colorbar(scatter, ax=ax, label=colour_fields[i])
                 ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
             plt.tight_layout()
             plt.show()
     
     elif coords_type == 'cylindrical':
-        colour_fields = ['intensities_0', 'radial distance', 'theta_angle', 'z',
-                         'intensities_1', 'radial distance', 'theta_angle', 'z']
+        colour_fields = ['intensities_0', 'radial_distance', 'theta_angle', 'z',
+                         'intensities_1', 'radial_distance', 'theta_angle', 'z']
         norm_mi0, norm_mi1, norm_theta, norm_phi = normalise_cmaps(input_path, sample, coords_type)
         norms = [norm_mi0, None, norm_theta, None,
                  norm_mi1, None, norm_theta, None]
@@ -176,8 +168,7 @@ def main(**kwargs):
                     c=data[colour_fields[i]] if channel == 0 else data[colour_fields[i+4]],
                     cmap='inferno' if i == 0 or i == 1 else 'RdBu',
                     norm=norms[i] if channel == 0 else norms[i+4],
-                    s=1
-                )
+                    s=1)
                 fig.colorbar(scatter, ax=ax, label=colour_fields[i])
                 ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
             plt.tight_layout()
@@ -203,8 +194,7 @@ def main(**kwargs):
                     c=data[colour_fields[i]] if channel == 0 else data[colour_fields[i+4]],
                     cmap='inferno' if i == 0 or i == 1 else 'RdBu',
                     norm=norms[i] if channel == 0 else norms[i+4],
-                    s=1
-                )
+                    s=1)
                 fig.colorbar(scatter, ax=ax, label=colour_fields[i])
                 ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
             plt.tight_layout()
@@ -216,11 +206,16 @@ def parse_args():
                         help='Path to input file with features')
     parser.add_argument('--sample', type=str, default=None,
                         help='Specific sample to create plots for')
-    parser.add_argument('--method', type=str, default='PCA', choices=['PCA', 'UMAP'],
+    parser.add_argument('--method', type=str, default='PCA',
                         help='Dimension reduction method to use')
     parser.add_argument('--coords_type', type=str, default='polar', choices=['polar', 'cylindrical', 'cartesian'],
                         help='Type of coordinates to colour points by')
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if not args.method.isupper():
+        args.method = args.method.upper()
+
+    return args
 
 if __name__ == '__main__':
     args = parse_args()
