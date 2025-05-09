@@ -288,7 +288,7 @@ def parse_args():
     parser.add_argument('--sample', type=str, default=None,
                         help='Specific sample to create plots for')
     parser.add_argument('--method', type=str, default='PCA',
-                        help='Dimension reduction method to use')
+                        help='Dimensionality reduction method to use')
     parser.add_argument('--coords_type', type=str, default='cartesian', choices=['polar', 'cylindrical', 'cartesian'],
                         help='Type of coordinates to colour points by')
     parser.add_argument('--clustering', action='store_true',
