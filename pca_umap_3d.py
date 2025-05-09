@@ -5,9 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.colors import Normalize
-import colorcet
 import umap
 import hdbscan
 import warnings
@@ -25,6 +23,7 @@ o Create a scatter plot of PCAs where points are coloured as function of:
   2. polar coordinates
 o Perform UMAP for better visualisation
 o Provide option to perform HDBScan
+o Add output path to save plots and labels with coords to folder.
 """
 
 # Find a sample with clear positive and negative cells
