@@ -93,9 +93,10 @@ def perform_pca_umap(input_path, sample, method):
 def perform_hdbscan(input_path, sample, method, clustering=False):
     if clustering:
         ch0, ch1 = perform_pca_umap(input_path, sample, method)
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=5)
-        labels0 = clusterer.fit(ch0)
-        labels1 = clusterer.fit(ch1)
+        clusterer0 = hdbscan.HDBSCAN(min_cluster_size=5)
+        clusterer1 = hdbscan.HDBSCAN(min_cluster_size=5)
+        labels0 = clusterer0.fit(ch0)
+        labels1 = clusterer1.fit(ch1)
         return labels0, labels1
     else:
         return None, None
