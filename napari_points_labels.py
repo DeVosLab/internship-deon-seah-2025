@@ -55,6 +55,8 @@ def main(**kwargs):
     img_path = kwargs['img_path']
     labels_path = kwargs['labels_path']
     sample = kwargs['sample']
+    do_out_of_slice = kwargs['do_out_of_slice']
+    hide_all_points = kwargs['hide_all_points']
 
     image = preprocess_image(img_path, sample)
     channel_labels = read_labels_coords(labels_path, sample)
@@ -90,9 +92,9 @@ def main(**kwargs):
                 name=f'channel {channel}, cluster {cluster}',
                 face_color=[cluster_colours[cluster]] * len(cluster_points),
                 ndim=3,
-                out_of_slice_display=True,
+                out_of_slice_display=True if do_out_of_slice else False,
                 symbol='o',
-                visible=False
+                visible=False if hide_all_points else True
                 )
 
     napari.run()
@@ -105,6 +107,10 @@ def parse_args():
                         help='Path to files containing labels and coordinates')
     parser.add_argument('--sample', type=str, default=None,
                         help='Specific sample to visualise in napari')
+    parser.add_argument('--do_out_of_slice', action='store_true',
+                        help='Toggle out_of_slice_display for all points layers')
+    parser.add_argument('--hide_all_points', action='store_true',
+                        help='Hides all points layers, can be manually unhidden')
     args = parser.parse_args()
 
     return args
