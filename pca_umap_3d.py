@@ -75,18 +75,24 @@ def convert_coords(input_path, sample, coords_type):
 
 # Split features of first and second channel and perform PCA on each channel (two or three components)
 def perform_pca_umap(input_path, sample, method):
-    if method == 'PCA' or method == 'UMAP':
-        _, _, features = get_coords_features(input_path, sample)
-        features_ch0 = features[:, 1024:]
-        pca0 = PCA(n_components=3).fit_transform(features_ch0)
-        features_ch1 = features[:, -1024:]
-        pca1 = PCA(n_components=3).fit_transform(features_ch1)
-        if method == 'UMAP':
-            ch0 = umap.UMAP(n_components=3, random_state=42).fit_transform(pca0)
-            ch1 = umap.UMAP(n_components=3, random_state=42).fit_transform(pca1)
-        else:
-            ch0 = pca0
-            ch1 = pca1
+    _, _, features = get_coords_features(input_path, sample)
+    features_ch0 = features[:, :1024]
+    print(f'Ch0 features: {features_ch0.shape, features_ch0.mean(), features_ch0.std()}')
+    features_ch1 = features[:, 1024:]
+    print(f'Ch1 features: {features_ch1.shape, features_ch1.mean(), features_ch1.std()}')
+
+    if method == 'PCA':
+        pca0 = PCA(n_components=3)
+        pca1 = PCA(n_components=3)
+        ch0 = pca0.fit_transform(features_ch0)
+        ch1 = pca1.fit_transform(features_ch1)
+
+    elif method == 'UMAP':
+        umap0 = umap.UMAP(n_components=3, random_state=42)
+        umap1 = umap.UMAP(n_components=3, random_state=42)
+        ch0 = umap0.fit_transform(features_ch0)
+        ch1 = umap1.fit_transform(features_ch1)
+
     return ch0, ch1
 
 # With the option to perform HDBScan, cluster using HDBScan
