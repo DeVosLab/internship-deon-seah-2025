@@ -77,9 +77,7 @@ def convert_coords(input_path, sample, coords_type):
 def perform_pca_umap(input_path, sample, method):
     _, _, features = get_coords_features(input_path, sample)
     features_ch0 = features[:, :1024]
-    print(f'Ch0 features: {features_ch0.shape, features_ch0.mean(), features_ch0.std()}')
     features_ch1 = features[:, 1024:]
-    print(f'Ch1 features: {features_ch1.shape, features_ch1.mean(), features_ch1.std()}')
 
     if method == 'PCA':
         pca0 = PCA(n_components=3)
