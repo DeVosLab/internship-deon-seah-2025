@@ -5,33 +5,40 @@ import re
 import colorcet as cc
 import seaborn as sns
 import napari
-import tifffile
 import numpy as np
 import pandas as pd
+import h5py
 
 """
-o Load in sample image (.tiff)
+o Load in sample image (.h5)
 o Read in labels and coords of this sample
 o Using different colours, render the points on the image channels
 o One image layer per channel
 o One points layer per cluster
 """
 
-# Load image file and preprocess image
-def preprocess_image(img_path, sample):
-    sample = 'r01c14'
-    tif_files = [f for f in Path(img_path).glob('*.tif') if f.is_file()]
-    img_file = next((f for f in tif_files if f.stem == sample), None)
+# Load image file and preprocess image from the HDF5 file
+def preprocess_image(h5_path, memb_size, sample):
+    if Path(h5_path).is_file():
+        f = h5py.File(h5_path, 'r')
 
-    image = tifffile.imread(str(img_file))
-    padded_image = np.pad(
-        image,
-        pad_width=((0, 0), (0, 0), (30, 30), (30, 30)),
-        mode='constant',
-        constant_values=0)
+    elif '%d' in h5_path:
+        memb_size_bytes = memb_size * 1024**3
+        first_file = h5_path.replace('%d', '0')
+        if not Path(first_file).exists():
+            raise FileNotFoundError(f'Expected first file in family not found: {Path(first_file)}')
+        f = h5py.File(h5_path, 'r', driver='family', memb_size=memb_size_bytes)
+    
+    else:
+        raise ValueError(f'Provided path is neither a .h5 file or file family: {Path(h5_path)}')
+    
+    with f:
+        img = f[sample]['img'][:]
+
     img = np.transpose(
-        padded_image,
+        img,
         (1, 0, 2, 3)) # transposes image shape (prev. z, c, y, x, now c, z, y, x)
+
     return img
 
 # Read labels and coords
@@ -48,17 +55,18 @@ def read_labels_coords(labels_path, sample):
 
 # Visualisation in napari
 def main(**kwargs):
-    assert kwargs['img_path'] is not None
+    assert kwargs['h5_path'] is not None
     assert kwargs['labels_path'] is not None
     assert kwargs['sample'] is not None
 
-    img_path = kwargs['img_path']
+    h5_path = kwargs['h5_path']
+    memb_size = kwargs['memb_size']
     labels_path = kwargs['labels_path']
     sample = kwargs['sample']
     do_out_of_slice = kwargs['do_out_of_slice']
     hide_all_points = kwargs['hide_all_points']
 
-    image = preprocess_image(img_path, sample)
+    image = preprocess_image(h5_path, memb_size, sample)
     channel_labels = read_labels_coords(labels_path, sample)
 
     # Initialise napari
@@ -69,7 +77,8 @@ def main(**kwargs):
         image,
         channel_axis=0,
         colormap=['green','magenta'],
-        name=f'{sample}'
+        name=f'{sample}',
+        scale=(5, 0.64, 0.64)
         )
 
     # Add points layer; one per cluster (35)
@@ -94,15 +103,18 @@ def main(**kwargs):
                 ndim=3,
                 out_of_slice_display=True if do_out_of_slice else False,
                 symbol='o',
-                visible=False if hide_all_points else True
+                visible=False if hide_all_points else True,
+                scale=(5, 0.64, 0.64)
                 )
 
     napari.run()
 
 def parse_args():
     parser = ArgumentParser(description='Visualisation of Sample with Labelled Points in napari')
-    parser.add_argument('--img_path', type=str, default=None,
-                        help='Path to image files')
+    parser.add_argument('--h5_path', type=str, default=None,
+                        help='Path to HDF5 file')
+    parser.add_argument('--memb_size', type=float, default=3.5,
+                        help='Specify size of each .h5 file family member')
     parser.add_argument('--labels_path', type=str, default=None,
                         help='Path to files containing labels and coordinates')
     parser.add_argument('--sample', type=str, default=None,
