@@ -5,6 +5,7 @@ import re
 import colorcet as cc
 import seaborn as sns
 import napari
+from napari.utils.colormaps import AVAILABLE_COLORMAPS
 import numpy as np
 import pandas as pd
 import h5py
@@ -63,6 +64,7 @@ def main(**kwargs):
     memb_size = kwargs['memb_size']
     labels_path = kwargs['labels_path']
     sample = kwargs['sample']
+    voxelsize = kwargs['voxelsize']
     do_out_of_slice = kwargs['do_out_of_slice']
     hide_all_points = kwargs['hide_all_points']
 
@@ -73,12 +75,15 @@ def main(**kwargs):
     viewer = napari.Viewer()
 
     # Add image layer; one per channel (2)
+    avail_cols = list(AVAILABLE_COLORMAPS.keys())
+    num_channels = image.shape[0]
+    colmaps = avail_cols[:num_channels]
     viewer.add_image(
         image,
         channel_axis=0,
-        colormap=['green','magenta'],
+        colormap=colmaps,
         name=f'{sample}',
-        scale=(5, 0.64, 0.64)
+        scale=voxelsize
         )
 
     # Add points layer; one per cluster (35)
@@ -104,7 +109,7 @@ def main(**kwargs):
                 out_of_slice_display=True if do_out_of_slice else False,
                 symbol='o',
                 visible=False if hide_all_points else True,
-                scale=(5, 0.64, 0.64)
+                scale=voxelsize
                 )
 
     napari.run()
@@ -123,6 +128,8 @@ def parse_args():
                         help='Toggle out_of_slice_display for all points layers')
     parser.add_argument('--hide_all_points', action='store_true',
                         help='Hides all points layers, can be manually unhidden')
+    parser.add_argument('--voxelsize', type=float, default=[5, 0.64, 0.64],
+                        help='Size of vozels in the image, in [z y x]')
     args = parser.parse_args()
 
     return args
