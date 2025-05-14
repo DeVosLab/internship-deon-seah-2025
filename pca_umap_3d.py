@@ -160,13 +160,13 @@ def main(**kwargs):
     clustermap = kwargs['clustermap']
 
     # defining params
-    if method != 'cartesian':
+    if coords_type != 'cartesian':
         print(f'Converting Cartesian coordinates to {coords_type} coordinates...')
     data = convert_coords(input_path, sample, coords_type)
     print(f'Performing {method} on {sample} features...')
     components = perform_pca_umap(input_path, sample, method)
     
-    plots_dir = Path(output_path).joinpath('plots')
+    plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
     plots_dir.mkdir(exist_ok=True, parents=True) 
 
     # defining more params for polar
