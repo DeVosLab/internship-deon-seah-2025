@@ -126,8 +126,8 @@ def normalise_cmaps(input_path, sample, coords_type):
         vmin=data['intensity_0'].quantile(0.01),
         vmax=data['intensity_0'].quantile(0.99))
     norm_mi1 = Normalize(
-        vmin=data['intensity_1'].quantile(0.1),
-        vmax=data['intensity_1'].quantile(0.9))
+        vmin=data['intensity_1'].quantile(0.01),
+        vmax=data['intensity_1'].quantile(0.99))
     norm_theta = None
     norm_phi = None
 
@@ -226,30 +226,33 @@ def main(**kwargs):
         for channel, channel_components in enumerate(components):
             ax = fig.add_subplot(1, num_plots, channel+1,
                                  projection='3d')
+            cluster_labels = labels[channel].labels_
+
             scatter = ax.scatter(
                 channel_components[:, 0],
                 channel_components[:, 1],
                 channel_components[:, 2],
-                c=labels[channel].labels_,
+                c=cluster_labels,
                 cmap='cet_glasbey',
                 s=3)
-            plt.legend()
+            fig.colorbar(scatter, ax=ax, label='Cluster labels')
             ax.set_title(f'HDBSCAN Clustering of Channel {channel}')
             fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
             fig.savefig(fig_path, dpi=300, bbox_inches='tight')
-        plt.tight_layout()
 
-        # save labels and coordinates to .csv file
-        print('Saving labels and coordinates...')
+            # save labels, coordinates, and components to .csv file
+            labels_dir = Path(output_path).joinpath('labels')
+            labels_dir.mkdir(exist_ok=True, parents=True)
 
-        labels_dir = Path(output_path).joinpath('labels')
-        labels_dir.mkdir(exist_ok=True, parents=True) 
-
-        for i, label in enumerate(labels):
-            label = label.labels_
             df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
-            df['label'] = label
-            df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_{i}.csv', index=False)
+            df['label'] = cluster_labels
+            df['cp1'] = channel_components[:, 0]
+            df['cp2'] = channel_components[:, 1]
+            df['cp3'] = channel_components[:, 2]
+            df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
+            print(f'Saved labels and coordinates for channel {channel}!')
+
+        plt.tight_layout()
 
         # visualise features against channel labels in a clustermap
         if clustermap:
