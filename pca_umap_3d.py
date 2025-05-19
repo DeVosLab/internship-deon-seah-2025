@@ -8,6 +8,7 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import colorcet
 from matplotlib.colors import Normalize
+from sklearn.preprocessing import StandardScaler
 import umap
 import hdbscan
 import warnings
@@ -73,37 +74,54 @@ def convert_coords(input_path, sample, coords_type):
         pass
     return data
 
-# Split features of first and second channel and perform PCA on each channel (two or three components)
-def perform_pca_umap(input_path, sample, method):
+# Split features of the different channels
+def split_features(input_path, sample):
     _, _, features = get_coords_features(input_path, sample)
-    features_ch0 = features[:, :1024]
-    features_ch1 = features[:, 1024:]
+    _, total_features = features.shape
+    num_channels = total_features // 1024
+
+    channel_features = [
+        features[:, i*1024:(i+1)*1024]
+        for i in range(num_channels)]
+    
+    return num_channels, channel_features
+    
+# Perform PCA or UMAP on each channel (two or three components)
+def perform_pca_umap(input_path, sample, method):
+    _, channel_features = split_features(input_path, sample)
 
     if method == 'PCA':
-        pca0 = PCA(n_components=3)
-        pca1 = PCA(n_components=3)
-        ch0 = pca0.fit_transform(features_ch0)
-        ch1 = pca1.fit_transform(features_ch1)
+        reduced_ft = []
+        for i, ft in enumerate(channel_features):
+            scaler = StandardScaler()
+            ft_scaled = scaler.fit_transform(ft)
+            pca = PCA(n_components=3)
+            reduced = pca.fit_transform(ft_scaled)
+            reduced_ft.append(reduced)
 
     elif method == 'UMAP':
-        umap0 = umap.UMAP(n_components=3, random_state=42)
-        umap1 = umap.UMAP(n_components=3, random_state=42)
-        ch0 = umap0.fit_transform(features_ch0)
-        ch1 = umap1.fit_transform(features_ch1)
+        reduced_ft = []
+        for i, ft in enumerate(channel_features):
+            scaler = StandardScaler()
+            umapper = umap.UMAP(n_components=3, random_state=42)
+            reduced = umapper.fit_transform(ft_scaled)
+            reduced_ft.append(reduced)
 
-    return ch0, ch1
+    return reduced_ft
 
 # With the option to perform HDBScan, cluster using HDBScan
 def perform_hdbscan(input_path, sample, method, clustering=False):
     if clustering:
-        ch0, ch1 = perform_pca_umap(input_path, sample, method)
-        clusterer0 = hdbscan.HDBSCAN(min_cluster_size=5)
-        clusterer1 = hdbscan.HDBSCAN(min_cluster_size=5)
-        labels0 = clusterer0.fit(ch0)
-        labels1 = clusterer1.fit(ch1)
-        return labels0, labels1
+        reduced_ft = perform_pca_umap(input_path, sample, method)
+
+        labels = []
+        for ft in reduced_ft:
+            clusterer = hdbscan.HDBSCAN(min_cluster_size=5)
+            label = clusterer.fit(ft)
+            labels.append(label)
+        return labels
     else:
-        return None, None
+        return None
 
 # Normalising colourmaps for radial distance, theta and phi angle plots
 def normalise_cmaps(input_path, sample, coords_type):
@@ -112,8 +130,8 @@ def normalise_cmaps(input_path, sample, coords_type):
         vmin=data['intensity_0'].quantile(0.01),
         vmax=data['intensity_0'].quantile(0.99))
     norm_mi1 = Normalize(
-        vmin=data['intensity_1'].quantile(0.1),
-        vmax=data['intensity_1'].quantile(0.9))
+        vmin=data['intensity_1'].quantile(0.01),
+        vmax=data['intensity_1'].quantile(0.99))
     norm_theta = None
     norm_phi = None
 
@@ -146,13 +164,13 @@ def main(**kwargs):
     clustermap = kwargs['clustermap']
 
     # defining params
-    if method != 'cartesian':
+    if coords_type != 'cartesian':
         print(f'Converting Cartesian coordinates to {coords_type} coordinates...')
     data = convert_coords(input_path, sample, coords_type)
     print(f'Performing {method} on {sample} features...')
-    components = perform_pca_umap(input_path, sample, method) # ch0, ch1
+    components = perform_pca_umap(input_path, sample, method)
     
-    plots_dir = Path(output_path).joinpath('plots')
+    plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
     plots_dir.mkdir(exist_ok=True, parents=True) 
 
     # defining more params for polar
@@ -179,7 +197,7 @@ def main(**kwargs):
         norms = [norm_mi0, None, None, None,
                  norm_mi1, None, None, None]
         
-    # for loops to plot features for four variables and for both channels
+    # for loops to plot features for four variables and for all channels
     for channel, features in enumerate(components):
         num_plots = 4
         fig = plt.figure(figsize=(20, 5))
@@ -204,44 +222,41 @@ def main(**kwargs):
     # perform HDBSCAN clustering
     if clustering:
         print(f'Performing HDBSCAN clustering...')
-        labels = perform_hdbscan(input_path, sample, method, clustering) # labels0, labels1
-        num_plots = 2
-        fig = plt.figure(figsize=(10, 5))
+        labels = perform_hdbscan(input_path, sample, method, clustering)
+        num_plots, _ = split_features(input_path, sample)
+        fig = plt.figure(figsize=(num_plots * 5, 5))
         
         # plot features for each channel, coloured by HDBSCAN labels
-        for channel, components_channel in enumerate(components):
+        for channel, channel_components in enumerate(components):
             ax = fig.add_subplot(1, num_plots, channel+1,
                                  projection='3d')
+            cluster_labels = labels[channel].labels_
+
             scatter = ax.scatter(
-                components_channel[:, 0],
-                components_channel[:, 1],
-                components_channel[:, 2],
-                c=labels[channel].labels_,
+                channel_components[:, 0],
+                channel_components[:, 1],
+                channel_components[:, 2],
+                c=cluster_labels,
                 cmap='cet_glasbey',
                 s=3)
-            plt.legend()
+            fig.colorbar(scatter, ax=ax, label='Cluster labels')
             ax.set_title(f'HDBSCAN Clustering of Channel {channel}')
             fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
             fig.savefig(fig_path, dpi=300, bbox_inches='tight')
+
+            # save labels, coordinates, and components to .csv file
+            labels_dir = Path(output_path).joinpath('labels')
+            labels_dir.mkdir(exist_ok=True, parents=True)
+
+            df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
+            df['label'] = cluster_labels
+            df['cp1'] = channel_components[:, 0]
+            df['cp2'] = channel_components[:, 1]
+            df['cp3'] = channel_components[:, 2]
+            df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
+            print(f'Saved labels and coordinates for channel {channel}!')
+
         plt.tight_layout()
-
-        # save labels and coordinates to .csv file
-        print('Saving labels and coordinates...')
-
-        labels0, labels1 = labels
-        labels_dir = Path(output_path).joinpath('labels')
-        labels_dir.mkdir(exist_ok=True, parents=True) 
-
-
-        labels0 = labels0.labels_
-        df0 = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
-        df0['label'] = labels0
-        df0.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_0.csv', index=False)
-
-        labels1 = labels1.labels_
-        df1 = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
-        df1['label'] = labels1
-        df1.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_1.csv', index=False)
 
         # visualise features against channel labels in a clustermap
         if clustermap:
