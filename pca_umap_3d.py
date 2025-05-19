@@ -8,6 +8,7 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import colorcet
 from matplotlib.colors import Normalize
+from sklearn.preprocessing import StandardScaler
 import umap
 import hdbscan
 import warnings
@@ -92,15 +93,18 @@ def perform_pca_umap(input_path, sample, method):
     if method == 'PCA':
         reduced_ft = []
         for i, ft in enumerate(channel_features):
+            scaler = StandardScaler()
+            ft_scaled = scaler.fit_transform(ft)
             pca = PCA(n_components=3)
-            reduced = pca.fit_transform(ft)
+            reduced = pca.fit_transform(ft_scaled)
             reduced_ft.append(reduced)
 
     elif method == 'UMAP':
         reduced_ft = []
         for i, ft in enumerate(channel_features):
+            scaler = StandardScaler()
             umapper = umap.UMAP(n_components=3, random_state=42)
-            reduced = umapper.fit_transform(ft)
+            reduced = umapper.fit_transform(ft_scaled)
             reduced_ft.append(reduced)
 
     return reduced_ft
