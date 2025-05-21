@@ -3,14 +3,15 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import numpy as np
-import seaborn as sns
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 import colorcet
 from matplotlib.colors import Normalize
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 import umap
 import hdbscan
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.cluster.hierarchy import dendrogram, linkage
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -95,7 +96,9 @@ def perform_pca_umap(input_path, sample, method):
         for i, ft in enumerate(channel_features):
             scaler = StandardScaler()
             ft_scaled = scaler.fit_transform(ft)
-            pca = PCA(n_components=3)
+            pca = PCA(
+                n_components=3,
+                random_state=42)
             reduced = pca.fit_transform(ft_scaled)
             reduced_ft.append(reduced)
 
@@ -103,6 +106,7 @@ def perform_pca_umap(input_path, sample, method):
         reduced_ft = []
         for i, ft in enumerate(channel_features):
             scaler = StandardScaler()
+            ft_scaled = scaler.fit_transform(ft)
             umapper = umap.UMAP(n_components=3, random_state=42)
             reduced = umapper.fit_transform(ft_scaled)
             reduced_ft.append(reduced)
@@ -110,16 +114,23 @@ def perform_pca_umap(input_path, sample, method):
     return reduced_ft
 
 # With the option to perform HDBScan, cluster using HDBScan
-def perform_hdbscan(input_path, sample, method, clustering=False):
+def perform_hdbscan(input_path, sample, method, cluster_reduced, do_dendro, clustering):
     if clustering:
-        reduced_ft = perform_pca_umap(input_path, sample, method)
+        if cluster_reduced:
+            channel_ft = perform_pca_umap(input_path, sample, method)
+        else:
+            _, channel_ft = split_features(input_path, sample)
 
+        clusterers = []
         labels = []
-        for ft in reduced_ft:
+        for i, ft in enumerate(channel_ft):
             clusterer = hdbscan.HDBSCAN(min_cluster_size=5)
             label = clusterer.fit(ft)
             labels.append(label)
-        return labels
+            clusterers.append(clusterer)
+
+        return clusterers, labels
+    
     else:
         return None
 
@@ -161,7 +172,10 @@ def main(**kwargs):
     method = kwargs['method']
     coords_type = kwargs['coords_type']
     clustering = kwargs['clustering']
+    cluster_reduced = kwargs['cluster_reduced']
     clustermap = kwargs['clustermap']
+    map_reduced = kwargs['map_reduced']
+    do_dendro = kwargs['do_dendro']
 
     # defining params
     if coords_type != 'cartesian':
@@ -222,10 +236,10 @@ def main(**kwargs):
     # perform HDBSCAN clustering
     if clustering:
         print(f'Performing HDBSCAN clustering...')
-        labels = perform_hdbscan(input_path, sample, method, clustering)
+        clusterers, labels = perform_hdbscan(input_path, sample, method, cluster_reduced, do_dendro, clustering)
         num_plots, _ = split_features(input_path, sample)
         fig = plt.figure(figsize=(num_plots * 5, 5))
-        
+
         # plot features for each channel, coloured by HDBSCAN labels
         for channel, channel_components in enumerate(components):
             ax = fig.add_subplot(1, num_plots, channel+1,
@@ -243,9 +257,10 @@ def main(**kwargs):
             ax.set_title(f'HDBSCAN Clustering of Channel {channel}')
             fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
             fig.savefig(fig_path, dpi=300, bbox_inches='tight')
+            plt.tight_layout()
 
             # save labels, coordinates, and components to .csv file
-            labels_dir = Path(output_path).joinpath('labels')
+            labels_dir = Path(output_path).joinpath(f'labels\\{sample}')
             labels_dir.mkdir(exist_ok=True, parents=True)
 
             df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
@@ -254,33 +269,55 @@ def main(**kwargs):
             df['cp2'] = channel_components[:, 1]
             df['cp3'] = channel_components[:, 2]
             df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
-            print(f'Saved labels and coordinates for channel {channel}!')
+            print(f'Saved labels and coordinates for channel {channel}')
 
-        plt.tight_layout()
+        # plot condensed cluster trees
+        if do_dendro:
+            for i, clusterer in enumerate(clusterers):
+                print(f'Plotting condensed cluster tree for channel {i}...')
+                plt.figure(figsize=(8, 6))
+                clusterer.condensed_tree_.plot(select_clusters=True)
+                plt.title(f'Condensed Cluster Tree - Channel {i}')
+                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_HDBSCAN_cluster_tree_channel_{channel}.png'
+                plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+                plt.tight_layout()
 
-        # visualise features against channel labels in a clustermap
-        if clustermap:
-            cluster_channel = kwargs['cluster_channel']
-            
-            if coords_type == 'polar':
-                cluster_data = data[['radial_distance', 'theta_angle', 'phi_angle']]
+    else:
+        pass
 
-            elif coords_type == 'cylindrical':
-                cluster_data = data[['radial_distance', 'theta_angle', 'z']]
-
-            else:
-                cluster_data = data[['z', 'y', 'x']]
-
-            index = cluster_data.index
-
-            row_col = pd.Series(labels[cluster_channel].labels_, index=index).map(dict(zip(np.unique(labels[cluster_channel].labels_),
-                                                        sns.color_palette('hls', len(np.unique(labels[cluster_channel].labels_))))))
-            
-            sns.clustermap(cluster_data, standard_scale=1, row_colors=row_col,
-                           row_cluster=False, col_cluster=False)
+    # visualise features against channel labels in a clustermap
+    if clustermap:
+        print(f'Plotting clustermaps...')
         
+        if map_reduced:
+            channel_features = components
         else:
-            pass
+            _, channel_features = split_features(input_path, sample)
+
+        for channel, channel_components in enumerate(channel_features):
+            cluster_data = pd.DataFrame(channel_components)
+            g = sns.clustermap(cluster_data,
+                               method='ward',
+                               metric='euclidean',
+                               row_cluster=True,
+                               col_cluster=False)
+            g.figure.suptitle(f'Channel {channel} Clustermap',
+                              y=1.02)
+            fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}.png'
+            g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
+            print(f'Saved clustermap for channel {channel}')
+
+            if do_dendro:
+                z = linkage(cluster_data,
+                            method='ward',
+                            metric='euclidean')
+                plt.figure(figsize=(6, 4))
+                dendrogram(z)
+                plt.title(f'Row dendrogram for channel {channel}')
+                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_clustermap_cluster_tree_channel_{channel}.png'
+                plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+                plt.tight_layout()
+    
     else:
         pass
 
@@ -297,14 +334,19 @@ def parse_args():
                         help='Specific sample to create plots for')
     parser.add_argument('--method', type=str, default='PCA',
                         help='Dimensionality reduction method to use')
-    parser.add_argument('--coords_type', type=str, default='cartesian', choices=['polar', 'cylindrical', 'cartesian'],
+    parser.add_argument('--coords_type', type=str, default='cartesian',
+                        choices=['polar', 'cylindrical', 'cartesian'],
                         help='Type of coordinates to colour points by')
     parser.add_argument('--clustering', action='store_true',
-                        help='Cluster with HDBScan')
+                        help='Cluster with HDBSCAN')
+    parser.add_argument('--cluster_reduced', action='store_true',
+                        help='Perform HDBSCAN clustering on dimensionality-reduced data (after PCA/UMAP)')
+    parser.add_argument('--do_dendro', action='store_true',
+                        help='Plots a dendrogram based on the internally constructed cluster hierarchy tree.')
     parser.add_argument('--clustermap', action='store_true',
                         help='Plots a hierarchically-clustered heatmap')
-    parser.add_argument('--cluster_channel', type=int, default=0,
-                        help='Choice of channel number to cluster points on')
+    parser.add_argument('--map_reduced', action='store_true',
+                        help='Cluster on (raw) features or dimensionality-reduced features')
     args = parser.parse_args()
 
     if not args.method.isupper():
