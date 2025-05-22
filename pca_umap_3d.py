@@ -11,7 +11,7 @@ import umap
 import hdbscan
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -296,21 +296,25 @@ def main(**kwargs):
 
         for channel, channel_components in enumerate(channel_features):
             cluster_data = pd.DataFrame(channel_components)
+            z = linkage(cluster_data,
+                        method='ward',
+                        metric='euclidean')
+            clusters = fcluster(z, t=2, criterion='maxclust')
+            palette = sns.color_palette('tab10', n_colors=len(set(clusters)))
+            row_cols = [palette[i - 1] for i in clusters]
+
             g = sns.clustermap(cluster_data,
-                               method='ward',
+                               row_linkage=z,
                                metric='euclidean',
-                               row_cluster=True,
+                               row_colors=row_cols,
                                col_cluster=False)
-            g.figure.suptitle(f'Channel {channel} Clustermap',
-                              y=1.02)
+            g.figure.suptitle(f'Channel {channel} Clustermap', y=1.02)
             fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}.png'
             g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
             print(f'Saved clustermap for channel {channel}')
 
+            # plot dendrograms
             if do_dendro:
-                z = linkage(cluster_data,
-                            method='ward',
-                            metric='euclidean')
                 plt.figure(figsize=(6, 4))
                 dendrogram(z)
                 plt.title(f'Row dendrogram for channel {channel}')
