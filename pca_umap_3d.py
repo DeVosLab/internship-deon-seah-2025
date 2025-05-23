@@ -294,34 +294,38 @@ def main(**kwargs):
         else:
             _, channel_features = split_features(input_path, sample)
 
+        n_levels = 4
         for channel, channel_components in enumerate(channel_features):
             cluster_data = pd.DataFrame(channel_components)
             z = linkage(cluster_data,
                         method='ward',
                         metric='euclidean')
-            clusters = fcluster(z, t=2, criterion='maxclust')
-            palette = sns.color_palette('tab10', n_colors=len(set(clusters)))
-            row_cols = [palette[i - 1] for i in clusters]
+            
+            for level in range(1, n_levels + 1):
+                n_clusters = 2 ** level
+                clusters = fcluster(z, t=n_clusters, criterion='maxclust')
+                palette = sns.color_palette('tab10', n_colors=len(set(clusters)))
+                row_cols = [palette[i - 1] for i in clusters]
 
-            g = sns.clustermap(cluster_data,
-                               row_linkage=z,
-                               metric='euclidean',
-                               row_colors=row_cols,
-                               col_cluster=False)
-            g.figure.suptitle(f'Channel {channel} Clustermap', y=1.02)
-            fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}.png'
-            g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
-            print(f'Saved clustermap for channel {channel}')
+                g = sns.clustermap(cluster_data,
+                                   row_linkage=z,
+                                   metric='euclidean',
+                                   row_colors=row_cols,
+                                   col_cluster=False)
+                g.figure.suptitle(f'Channel {channel} Clustermap: Level {level} ({n_clusters} clusters)',
+                                  y=1.02)
 
-            # plot dendrograms
-            if do_dendro:
-                plt.figure(figsize=(6, 4))
-                dendrogram(z)
-                plt.title(f'Row dendrogram for channel {channel}')
-                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_clustermap_cluster_tree_channel_{channel}.png'
-                plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-                plt.tight_layout()
-    
+                df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
+                df['label'] = clusters
+                df['cp1'] = channel_components[:, 0]
+                df['cp2'] = channel_components[:, 1]
+                df['cp3'] = channel_components[:, 2]
+                df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.csv')
+
+                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.png'
+                g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
+            print(f'Saved clustermaps for channel {channel}')
+
     else:
         pass
 
