@@ -71,25 +71,22 @@ def main(**kwargs):
 
     # Initialise napari
     viewer = napari.Viewer()
-
+    
     # Add image layer; one per channel (2)
     viewer.add_image(
         image,
         channel_axis=0,
         colormap=['green','magenta'],
         name=f'{sample}',
-        scale=(5, 0.64, 0.64)
-        )
+        scale=(5, 0.64, 0.64))
 
     # Add points layer; one per cluster (35)
     for channel, coords_label in channel_labels.items():
-        points = coords_label.iloc[:, 0:3].to_numpy()
-        labels = coords_label.iloc[:, -1].to_numpy()
+        points = coords_label[['z', 'y', 'x']].values
+        labels = coords_label['label'].values
 
         unique_clusters = sorted(set(labels))
-        for cluster in unique_clusters:
-            if cluster == -1:
-                continue
+        for i, cluster in enumerate(unique_clusters):
             cmap = sns.color_palette(cc.glasbey, n_colors=len(unique_clusters))
             cluster_colours = {cluster: cmap[i % len(cmap)]
                             for i, cluster in enumerate(unique_clusters)}
