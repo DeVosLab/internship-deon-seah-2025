@@ -41,6 +41,7 @@ def read_data(input_path):
                            engine='fastparquet')
     return data
 
+# Retrieve all data, coords only, and features only from data
 def get_coords_features(input_path, sample):
     data = read_data(input_path)
     sample_match = data[data['filename_img'].apply(lambda p: Path(p).stem == sample)]
@@ -52,38 +53,42 @@ def get_coords_features(input_path, sample):
     return data, coords, features
 
 # Transform coordinates to polar coordinates centred around centre of sample
-def convert_coords(input_path, sample, coords_type):
+def convert_coords(input_path, sample, coords_type, voxelsize=np.array((5, 0.64, 0.64))):
     data, coords, _ = get_coords_features(input_path, sample)
+    coords = coords.astype(float) * voxelsize
     centre = coords.mean(axis=0) # compute centre
     dcoords = coords - centre    # dist. from 0 along z, y, x axes
     dz, dy, dx = dcoords.T
-
+    
     if coords_type == 'polar' or coords_type == 'cylindrical':
-        theta = np.arctan2(dy, dx)  # theta angle
+        theta = np.arctan2(dy, dx) # theta angle
         data['theta_angle'] = theta
 
         if coords_type == 'polar':
-            r = np.sqrt(dz**2 + dy**2 + dx**2) # radial distance (polar)
-            phi = np.arccos(dz / r)            # phi angle
+            dxy2 = dx**2 + dy**2
+            r = np.sqrt(dxy2 + dz**2)           # radial distance (polar)
+            phi = np.arctan2(np.sqrt(dxy2), dz) # phi angle
             data['radial_distance'] = r
             data['phi_angle'] = phi
 
         elif coords_type == 'cylindrical':
-            r = np.sqrt(dy**2 + dx**2)         # radial distance (cyl)
+            r = np.sqrt(dy**2 + dx**2) # radial distance (cyl)
             data['radial_distance'] = r
-
     else:
         pass
-    return data
+    return dcoords, data
 
 # Bin angles into octants
 def get_octants(input_path, sample, coords_type):
-    data = convert_coords(input_path, sample, coords_type)
-    z, y, x = data['z'], data['y'], data['x']
-    x_bin = (x >= 0).astype(int)
-    y_bin = (y >= 0).astype(int)
-    z_bin = (Z >= 0).astype(int)
-    octants = x_bin + 2 * y_bin  + 4 * z_bin
+    dcoords, data = convert_coords(input_path, sample, coords_type)
+    dz, dy, dx = dcoords.T
+
+    x_bin = (dx >= 0).astype(int) # 1 if x >=0, else 0
+    y_bin = (dy >= 0).astype(int)
+    z_bin = (dz >= 0).astype(int)
+
+    octants = x_bin + 2 * y_bin  + 4 * z_bin # octants 0-7 similar to binary code system
+    
     return octants
 
 # Split features of the different channels
@@ -104,7 +109,7 @@ def perform_pca_umap(input_path, sample, method):
 
     if method == 'PCA':
         reduced_ft = []
-        for i, ft in enumerate(channel_features):
+        for ft in channel_features:
             scaler = StandardScaler()
             ft_scaled = scaler.fit_transform(ft)
             pca = PCA(
@@ -115,7 +120,7 @@ def perform_pca_umap(input_path, sample, method):
 
     elif method == 'UMAP':
         reduced_ft = []
-        for i, ft in enumerate(channel_features):
+        for ft in channel_features:
             scaler = StandardScaler()
             ft_scaled = scaler.fit_transform(ft)
             umapper = umap.UMAP(n_components=3, random_state=42)
@@ -147,7 +152,7 @@ def perform_hdbscan(input_path, sample, method, cluster_reduced, do_dendro, clus
 
 # Normalising colourmaps for radial distance, theta and phi angle plots
 def normalise_cmaps(input_path, sample, coords_type):
-    data = convert_coords(input_path, sample, coords_type)
+    _, data = convert_coords(input_path, sample, coords_type)
     norm_mi0 = Normalize(
         vmin=data['intensity_0'].quantile(0.01),
         vmax=data['intensity_0'].quantile(0.99))
@@ -191,8 +196,8 @@ def main(**kwargs):
 
     print(f'Performing {method} on {sample} features...')
     components = perform_pca_umap(input_path, sample, method) # dimensionality-reduced features
-    data = convert_coords(input_path, sample, coords_type)    # data including converted coords
-    n_channels, channel_features = split_features(input_path, sample) # num of channels and features per channel
+    _, data = convert_coords(input_path, sample, coords_type) # data including converted coords
+    _, channel_features = split_features(input_path, sample)  # num of channels and features per channel
 
     # visualise features against channel labels in a clustermap
     if clustermap:
@@ -231,9 +236,9 @@ def main(**kwargs):
 
                 df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
                 df['label'] = clusters
-                df['cp1'] = channel_components[:, 0]
-                df['cp2'] = channel_components[:, 1]
-                df['cp3'] = channel_components[:, 2]
+                df['cp1'] = channel_ft[:, 0]
+                df['cp2'] = channel_ft[:, 1]
+                df['cp3'] = channel_ft[:, 2]
                 df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.csv')
 
                 fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.png'
@@ -278,7 +283,7 @@ def main(**kwargs):
     for channel, features in enumerate(components):
         bottom_row = n_levels if clustermap else 0
         n_plots = 5 + bottom_row
-        fig = plt.figure(figsize=(25, 10))
+        fig = plt.figure(figsize=(30, 10))
         gs = GridSpec(2, max(5, bottom_row), figure=fig)
 
         for i in range(n_plots):
@@ -294,7 +299,7 @@ def main(**kwargs):
                         return 'RdBu'
                     elif i == 3:
                         return 'hsv'
-                    
+                
                 scatter = ax.scatter(
                     features[:, 0],
                     features[:, 1],
@@ -304,7 +309,7 @@ def main(**kwargs):
                     cmap=choose_cmap(i),
                     norm=norms[i] if channel == 0 else norms[i+4],
                     s=3)
-                fig.colorbar(scatter, ax=ax, label=colour_fields[i])
+                fig.colorbar(scatter, ax=ax, label=colour_fields[i], shrink=0.5)
                 ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
 
             # create a fifth plot, coloured by octant regions
@@ -316,7 +321,7 @@ def main(**kwargs):
                     c=get_octants(input_path, sample, coords_type),
                     cmap='tab10',
                     s=3)
-                fig.colorbar(scatter, ax=ax, label='octant_region')
+                fig.colorbar(scatter, ax=ax, label='octant_region', shrink=0.5)
                 ax.set_title(f'{method} of Channel {channel} - Coloured by octant_region')
 
             # remaining plots coloured by clusters
@@ -329,8 +334,8 @@ def main(**kwargs):
                     c=clusters_dict[channel][level],
                     cmap='tab20',
                     s=3)
-                fig.colorbar(scatter, ax=ax, label='clusters')
-                ax.set_title(f'{method} of Channel {channel} - Coloured by clusters at level {level}')
+                fig.colorbar(scatter, ax=ax, label='clusters', shrink=0.5)
+                ax.set_title(f'{method} of Channel {channel} -\nColoured by clusters at level {level}')
 
         fig_path = f'{plots_dir}\\{time_stamp}_{sample}_channel_{channel}_{coords_type}_{method}_plot.png'
         fig.savefig(fig_path, dpi=300, bbox_inches='tight')
@@ -357,7 +362,7 @@ def main(**kwargs):
                 c=cluster_labels,
                 cmap='cet_glasbey',
                 s=3)
-            fig.colorbar(scatter, ax=ax, label='Cluster labels')
+            fig.colorbar(scatter, ax=ax, label='Cluster labels', shrink=0.5)
             ax.set_title(f'HDBSCAN Clustering of Channel {channel}')
             fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
             fig.savefig(fig_path, dpi=300, bbox_inches='tight')
