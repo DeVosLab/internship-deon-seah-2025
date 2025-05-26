@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 import umap
 import hdbscan
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 import warnings
@@ -67,13 +68,23 @@ def convert_coords(input_path, sample, coords_type):
             data['radial_distance'] = r
             data['phi_angle'] = phi
 
-        else:
-            r = np.sqrt(dy**2 + dx**2) # radial distance (cyl)
+        elif coords_type == 'cylindrical':
+            r = np.sqrt(dy**2 + dx**2)         # radial distance (cyl)
             data['radial_distance'] = r
 
     else:
         pass
     return data
+
+# Bin angles into octants
+def get_octants(input_path, sample, coords_type):
+    data = convert_coords(input_path, sample, coords_type)
+    z, y, x = data['z'], data['y'], data['x']
+    x_bin = (x >= 0).astype(int)
+    y_bin = (y >= 0).astype(int)
+    z_bin = (Z >= 0).astype(int)
+    octants = x_bin + 2 * y_bin  + 4 * z_bin
+    return octants
 
 # Split features of the different channels
 def split_features(input_path, sample):
@@ -174,15 +185,67 @@ def main(**kwargs):
     clustering = kwargs['clustering']
     cluster_reduced = kwargs['cluster_reduced']
     clustermap = kwargs['clustermap']
+    n_levels = kwargs['n_levels']
     map_reduced = kwargs['map_reduced']
     do_dendro = kwargs['do_dendro']
 
+    print(f'Performing {method} on {sample} features...')
+    components = perform_pca_umap(input_path, sample, method) # dimensionality-reduced features
+    data = convert_coords(input_path, sample, coords_type)    # data including converted coords
+    n_channels, channel_features = split_features(input_path, sample) # num of channels and features per channel
+
+    # visualise features against channel labels in a clustermap
+    if clustermap:
+        print(f'Plotting clustermaps...')
+        
+        features = components if map_reduced else channel_features
+
+        clusters_dict = {}
+        for channel, channel_ft in enumerate(features):
+            cluster_data = pd.DataFrame(channel_ft)
+            z = linkage(cluster_data,
+                        method='ward',
+                        metric='euclidean')
+            
+            clusters_dict[channel] = {}
+            for level in range(1, n_levels + 1):
+                n_clusters = 2 ** level
+                clusters = fcluster(z, t=n_clusters, criterion='maxclust')
+                clusters_dict[channel][level] = clusters
+
+                palette = sns.color_palette('tab20', n_colors=len(set(clusters)))
+                row_cols = [palette[i - 1] for i in clusters]
+
+                g = sns.clustermap(cluster_data,
+                                   row_linkage=z,
+                                   metric='euclidean',
+                                   row_colors=row_cols,
+                                   col_cluster=False)
+                g.figure.suptitle(f'Channel {channel} Clustermap: Level {level} ({n_clusters} clusters)',
+                                  y=1.02)
+                
+                labels_dir = Path(output_path).joinpath(f'labels\\{sample}')
+                labels_dir.mkdir(exist_ok=True, parents=True)
+                plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
+                plots_dir.mkdir(exist_ok=True, parents=True) 
+
+                df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
+                df['label'] = clusters
+                df['cp1'] = channel_components[:, 0]
+                df['cp2'] = channel_components[:, 1]
+                df['cp3'] = channel_components[:, 2]
+                df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.csv')
+
+                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.png'
+                g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
+            print(f'Saved clustermaps for channel {channel}')
+
+    else:
+        pass
+
     # defining params
     if coords_type != 'cartesian':
-        print(f'Converting Cartesian coordinates to {coords_type} coordinates...')
-    data = convert_coords(input_path, sample, coords_type)
-    print(f'Performing {method} on {sample} features...')
-    components = perform_pca_umap(input_path, sample, method)
+        print(f'Converted Cartesian coordinates to {coords_type} coordinates')
     
     plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
     plots_dir.mkdir(exist_ok=True, parents=True) 
@@ -204,7 +267,7 @@ def main(**kwargs):
                  norm_mi1, None, norm_theta, None]
 
     # defining more params for cartesian
-    else: # cartesian coords
+    elif coords_type == 'cartesian':
         colour_fields = ['intensity_0', 'x', 'y', 'z',
                          'intensity_1', 'x', 'y', 'z']
         norm_mi0, norm_mi1, norm_theta, norm_phi = normalise_cmaps(input_path, sample, coords_type)
@@ -213,21 +276,62 @@ def main(**kwargs):
         
     # for loops to plot features for four variables and for all channels
     for channel, features in enumerate(components):
-        num_plots = 4
-        fig = plt.figure(figsize=(20, 5))
-        for i in range(num_plots):
-            ax = fig.add_subplot(1, num_plots, i+1,
-                                    projection='3d')
-            scatter = ax.scatter(
-                features[:, 0],
-                features[:, 1],
-                features[:, 2],
-                c=data[colour_fields[i]] if channel == 0 else data[colour_fields[i+4]],
-                cmap='inferno' if i == 0 or i == 1 else 'RdBu',
-                norm=norms[i] if channel == 0 else norms[i+4],
-                s=3)
-            fig.colorbar(scatter, ax=ax, label=colour_fields[i])
-            ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
+        bottom_row = n_levels if clustermap else 0
+        n_plots = 5 + bottom_row
+        fig = plt.figure(figsize=(25, 10))
+        gs = GridSpec(2, max(5, bottom_row), figure=fig)
+
+        for i in range(n_plots):
+            row = 0 if i < 5 else 1
+            col = i if i < 5 else i - 5
+            ax = fig.add_subplot(gs[row, col], projection='3d')
+            
+            if i < 4:
+                def choose_cmap(i):
+                    if i == 0 or i == 1:
+                        return 'inferno'
+                    elif i == 2:
+                        return 'RdBu'
+                    elif i == 3:
+                        return 'hsv'
+                    
+                scatter = ax.scatter(
+                    features[:, 0],
+                    features[:, 1],
+                    features[:, 2],
+                    c=data[colour_fields[i]] if channel == 0
+                    else data[colour_fields[i+4]],
+                    cmap=choose_cmap(i),
+                    norm=norms[i] if channel == 0 else norms[i+4],
+                    s=3)
+                fig.colorbar(scatter, ax=ax, label=colour_fields[i])
+                ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
+
+            # create a fifth plot, coloured by octant regions
+            elif i == 4:
+                scatter = ax.scatter(
+                    features[:, 0],
+                    features[:, 1],
+                    features[:, 2],
+                    c=get_octants(input_path, sample, coords_type),
+                    cmap='tab10',
+                    s=3)
+                fig.colorbar(scatter, ax=ax, label='octant_region')
+                ax.set_title(f'{method} of Channel {channel} - Coloured by octant_region')
+
+            # remaining plots coloured by clusters
+            elif clustermap:
+                level = i - 4
+                scatter = ax.scatter(
+                    features[:, 0],
+                    features[:, 1],
+                    features[:, 2],
+                    c=clusters_dict[channel][level],
+                    cmap='tab20',
+                    s=3)
+                fig.colorbar(scatter, ax=ax, label='clusters')
+                ax.set_title(f'{method} of Channel {channel} - Coloured by clusters at level {level}')
+
         fig_path = f'{plots_dir}\\{time_stamp}_{sample}_channel_{channel}_{coords_type}_{method}_plot.png'
         fig.savefig(fig_path, dpi=300, bbox_inches='tight')
         print(f'Saved plotted features for: {sample}, Channel {channel}')
@@ -285,46 +389,6 @@ def main(**kwargs):
     else:
         pass
 
-    # visualise features against channel labels in a clustermap
-    if clustermap:
-        print(f'Plotting clustermaps...')
-        
-        if map_reduced:
-            channel_features = components
-        else:
-            _, channel_features = split_features(input_path, sample)
-
-        for channel, channel_components in enumerate(channel_features):
-            cluster_data = pd.DataFrame(channel_components)
-            z = linkage(cluster_data,
-                        method='ward',
-                        metric='euclidean')
-            clusters = fcluster(z, t=2, criterion='maxclust')
-            palette = sns.color_palette('tab10', n_colors=len(set(clusters)))
-            row_cols = [palette[i - 1] for i in clusters]
-
-            g = sns.clustermap(cluster_data,
-                               row_linkage=z,
-                               metric='euclidean',
-                               row_colors=row_cols,
-                               col_cluster=False)
-            g.figure.suptitle(f'Channel {channel} Clustermap', y=1.02)
-            fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}.png'
-            g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
-            print(f'Saved clustermap for channel {channel}')
-
-            # plot dendrograms
-            if do_dendro:
-                plt.figure(figsize=(6, 4))
-                dendrogram(z)
-                plt.title(f'Row dendrogram for channel {channel}')
-                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_clustermap_cluster_tree_channel_{channel}.png'
-                plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-                plt.tight_layout()
-    
-    else:
-        pass
-
     plt.show()
     print('Done!')
     
@@ -349,12 +413,17 @@ def parse_args():
                         help='Plots a dendrogram based on the internally constructed cluster hierarchy tree.')
     parser.add_argument('--clustermap', action='store_true',
                         help='Plots a hierarchically-clustered heatmap')
+    parser.add_argument('--n_levels', type=int,
+                        help='Level of clustering. Level 1 = 2 clusters. Level 2 = 4 clusters, etc.')
     parser.add_argument('--map_reduced', action='store_true',
                         help='Cluster on (raw) features or dimensionality-reduced features')
     args = parser.parse_args()
 
     if not args.method.isupper():
         args.method = args.method.upper()
+
+    if args.clustermap and args.n_levels is None:
+        args.n_levels = 3
 
     return args
 
