@@ -17,21 +17,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-"""
-o Find a sample with clear positive and negative cells
-o Read in feature data of this sample
-o Transform coordinates to polar coordinates centred around centre of sample
-o Split features of first and second channel
-o Perform PCA on each channel (two or three components)
-o Create a scatter plot of PCAs where points are coloured as function of:
-  1. marker intensity
-  2. polar coordinates
-o Perform UMAP for better visualisation
-o Provide option to perform HDBScan
-o Add output path to save plots and labels with coords to folder.
-o Provide option to visualise on clustermap
-"""
-
 # Find a sample with clear positive and negative cells
   # sample = 'r01c14'
 
@@ -88,7 +73,7 @@ def get_octants(input_path, sample, coords_type):
     z_bin = (dz >= 0).astype(int)
 
     octants = x_bin + 2 * y_bin  + 4 * z_bin # octants 0-7 similar to binary code system
-    
+
     return octants
 
 # Split features of the different channels
@@ -291,7 +276,7 @@ def main(**kwargs):
             col = i if i < 5 else i - 5
             ax = fig.add_subplot(gs[row, col], projection='3d')
             
-            if i < 4:
+            if i < 4: # coloured by marker intensity & coordinates
                 def choose_cmap(i):
                     if i == 0 or i == 1:
                         return 'inferno'
