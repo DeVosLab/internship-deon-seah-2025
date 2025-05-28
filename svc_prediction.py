@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from umap import UMAP
+from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
@@ -26,15 +26,28 @@ data = pd.read_parquet('D:/3D_data/output/embeddings/1-60-60_mae_cell_embeddings
 
 # Split data into target and features, then train/val/test sets on image level
 print('Splitting data into training, validation, and test sets by image groups...')
-imgs = data['filename_img'].unique()
+imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= 2500).mean()).reset_index()
+imgs['label'] = (imgs['intensity_1'])
 
-train_imgs, test_imgs = train_test_split(imgs, test_size=0.3, random_state=42)
-valid_imgs, test_imgs = train_test_split(test_imgs, test_size=2/3, random_state=42)
+# Binarise intensity_1 labels
+data['label'] = (data['intensity_1'] >= 2500).astype(int)
 
-# Split on an image level
-train = data[data['filename_img'].isin(train_imgs)].reset_index(drop=True)
-valid = data[data['filename_img'].isin(valid_imgs)].reset_index(drop=True)
-test = data[data['filename_img'].isin(test_imgs)].reset_index(drop=True)
+# First split: training/valid+test
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
+for train_idx, temp_idx in sss.split(data, data['label']):
+    train = data.iloc[train_idx]
+    temp = data.iloc[temp_idx]
+
+# Second split: valid/test from 30%
+sss2 = StratifiedShuffleSplit(n_splits=1, test_size=2/3, random_state=42)
+for val_idx, test_idx in sss2.split(temp, temp['label']):
+    valid = temp.iloc[val_idx]
+    test = temp.iloc[test_idx]
+
+## Split on an image level
+#train = data[data['filename_img'].isin(train_imgs)].reset_index(drop=True)
+#valid = data[data['filename_img'].isin(valid_imgs)].reset_index(drop=True)
+#test = data[data['filename_img'].isin(test_imgs)].reset_index(drop=True)
 
 # Extract features and target from each split
 print('Splitting data into features and target from each split...')
@@ -53,17 +66,14 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_valid_scaled = scaler.transform(X_valid)
 X_test_scaled = scaler.transform(X_test)
 
-# Fit UMAP model to training set
-print('Fitting UMAP model to training set...')
-umap_model = UMAP(
-    n_components=10,
-    n_neighbors=15,
-    min_dist=0.3,
-    metric='euclidean',
+# Fit PCA model to training set
+print('Fitting PCA model to training set...')
+pca_model = PCA(
+    n_components=250,
     random_state=42)
-X_train_reduced = umap_model.fit_transform(X_train_scaled)
-X_valid_reduced = umap_model.transform(X_valid_scaled)
-X_test_reduced = umap_model.transform(X_test_scaled)
+X_train_reduced = pca_model.fit_transform(X_train_scaled)
+X_valid_reduced = pca_model.transform(X_valid_scaled)
+X_test_reduced = pca_model.transform(X_test_scaled)
 
 # Binarise y values
 y_train_bin = (y_train >= 2500).astype(int)
