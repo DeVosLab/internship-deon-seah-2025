@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+from umap import UMAP
 from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, roc_curve, roc_auc_score
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, roc_auc_score
+import seaborn as sns
 import matplotlib.pyplot as plt
 import warnings
 
@@ -51,12 +53,15 @@ for val_idx, test_idx in sss2.split(temp, temp['label']):
 
 # Extract features and target from each split
 print('Splitting data into features and target from each split...')
-ft = [col for col in data.columns if 'embedding' in col]
-X_train = train[ft].values
+features = data.iloc[:, 11:]
+ft_0 = features.columns[0:1024].tolist()
+ft_1 = features.columns[1024:2048].tolist()
+
+X_train = train[ft_0].values
 y_train = train['intensity_1'].values
-X_valid = valid[ft].values
+X_valid = valid[ft_0].values
 y_valid = valid['intensity_1'].values
-X_test = test[ft].values
+X_test = test[ft_0].values
 y_test = test['intensity_1'].values
 
 # Scale training set
@@ -67,13 +72,16 @@ X_valid_scaled = scaler.transform(X_valid)
 X_test_scaled = scaler.transform(X_test)
 
 # Fit PCA model to training set
-print('Fitting PCA model to training set...')
-pca_model = PCA(
-    n_components=250,
+print('Fitting UMAP model to training set...')
+umap_model = UMAP(
+    n_components=10,
+    n_neighbors=15,
+    min_dist=0.3,
+    metric='euclidean',
     random_state=42)
-X_train_reduced = pca_model.fit_transform(X_train_scaled)
-X_valid_reduced = pca_model.transform(X_valid_scaled)
-X_test_reduced = pca_model.transform(X_test_scaled)
+X_train_reduced = umap_model.fit_transform(X_train_scaled)
+X_valid_reduced = umap_model.transform(X_valid_scaled)
+X_test_reduced = umap_model.transform(X_test_scaled)
 
 # Binarise y values
 y_train_bin = (y_train >= 2500).astype(int)
@@ -93,15 +101,26 @@ svc_model.fit(X_train_reduced, y_train_bin)
 # Create predictions
 #print('Creating predictions on reduced validation set...')
 #val_predict = svc_model.predict(X_valid_reduced)
-#
-#print('Creating predictions on reduced test set...')
-#prediction = svc_model.predict(X_test_reduced)
-#
+
+print('Creating predictions on reduced test set...')
+prediction = svc_model.predict(X_test_reduced)
+
 #print('Classification report for validation set:')
 #print(classification_report(y_valid_bin, val_predict))
-#
-#print('Classification report for test set:')
-#print(classification_report(y_test_bin, prediction))
+
+print('Confusion matrix for test set:')
+print(confusion_matrix(y_test_bin, prediction, normalize='true'))
+
+#cm = confusion_matrix(y_test_bin, prediction)
+#cm_percent = cm.astype('float') / cm.sum() * 100
+#cm_percent = np.round(cm_percent, 2)
+
+#plt.figure(figsize=(6, 5))
+#sns.heatmap(cm_percent, annot=True, fmt='.2f', cmap='Blues', xticklabels=[0, 1], yticklabels=[0, 1])
+#plt.xlabel('Predicted Label')
+#plt.ylabel('True Label')
+#plt.title('Confusion Matrix (%)')
+#plt.show()
 
 # Get predicted probabilities for test set
 y_scores = svc_model.predict_proba(X_test_reduced)[:, 1]
