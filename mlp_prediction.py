@@ -2,15 +2,11 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, roc_curve, roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
-import torchvision
-import torchvision.transforms as transforms
-from torchvision.utils import make_grid
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -97,9 +93,12 @@ class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
         self.layers = nn.Sequential(
-            nn.Linear(2048, 100),
+            nn.Linear(2048, 512),
             nn.ReLU(),
-            nn.Linear(100, 1))
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1))
     
     def forward(self, x):
         x = x.view(x.size(0), -1)
@@ -108,22 +107,28 @@ class MLP(nn.Module):
     
 model = MLP()
 
-optimiser = torch.optim.SGD(
+optimiser = torch.optim.Adam(
     model.parameters(),
-    lr=0.01,
-    weight_decay=1e-4)
+    lr=0.001,
+    weight_decay=1e-5)
 loss_fn = nn.BCEWithLogitsLoss()
 
 mean_train_losses = []
 mean_valid_losses = []
 valid_acc_list = []
-epochs = 5
+
+epochs = 20
+best_val_loss = float('inf')
+patience = 5
+patience_counter = 0
 
 for epoch in range(epochs):
     model.train()
 
     train_losses = []
     valid_losses = []
+
+    # train the model
     for i, (images, labels) in enumerate(train_loader):
         optimiser.zero_grad()
         outputs = model(images)
@@ -140,6 +145,7 @@ for epoch in range(epochs):
     correct = 0
     total = 0
 
+    # validate the model
     with torch.no_grad():
         for i, (images, labels) in enumerate(valid_loader):
             outputs = model(images)
@@ -151,23 +157,63 @@ for epoch in range(epochs):
             correct += (predicted == labels).sum().item()
             total += labels.size(0)
 
-    mean_train_losses.append(np.mean(train_losses))
-    mean_valid_losses.append(np.mean(valid_losses))
-
+    avg_val_loss = np.mean(valid_losses)
     accuracy = 100*correct/total
     valid_acc_list.append(accuracy)
     print(f'Epoch: {epoch+1}, train loss: {np.mean(train_losses):.4f}, valid loss: {np.mean(valid_losses):.4f}, valid acc.: {accuracy:.2f}%')
 
-    model.eval()
-    test_preds = torch.LongTensor()
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        patience_counter = 0
+    else:
+        patience_counter += 1
+        print(f'No improvement for {patience_counter} epoch(s).')
+        if patience_counter >= patience:
+            print('Early stopping triggered.')
+            torch.save(model.state_dict(), 'best_model.pt')
+            break
+        
+model.load_state_dict(torch.load('best_model.pt'))    
+model.eval()
+correct = 0
+total = 0
 
-    for images, _ in test_loader:
+all_preds = []
+all_labels = []
+all_probs = []
+
+with torch.no_grad():
+    for images, labels in test_loader:
         outputs = model(images)
-        pred = (outputs > 0.5).int()
-        test_preds = torch.cat((test_preds, pred), dim=0)
+        probs = torch.sigmoid(outputs).view(-1)
+        preds = (probs > 0.5).int()
 
-    out_df = pd.DataFrame()
-    out_df['ID'] = np.arange(1, len(X_test)+1)
-    out_df['label'] = test_preds.numpy()
+        all_preds.append(preds.cpu().numpy())
+        all_labels.append(labels.cpu().numpy())
+        all_probs.append(probs.cpu().numpy())
 
-    out_df.head()
+        correct += (preds == labels).sum().item()
+        total += labels.size(0)
+
+    print('Confusion matrix for test set:')
+    print(confusion_matrix(all_labels, all_preds, normalize='true'))
+
+    accuracy = 100 * correct/total
+    print(f'Test accuracy: {accuracy:.2f}%')
+
+    fpr, tpr, _ = roc_curve(all_labels, all_probs)
+    auc = roc_auc_score(all_labels, all_probs)
+
+    plt.figure()
+    plt.plot(fpr, tpr, label=f'AUC = {auc:.4f}')
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve')
+    plt.legend(loc='lower right')
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+    fig_path = f'~/projects/deon/3D_data/mlp_output/MLP_ROC_AUC.png'
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
