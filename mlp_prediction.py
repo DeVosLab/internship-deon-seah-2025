@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from torch.optim.lr_scheduler import StepLR
+from tqdm import tqdm
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -81,7 +82,7 @@ X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
 y_test_tensor = torch.tensor(y_test_bin, dtype=torch.float32).reshape(-1, 1)
 
 # Create DataLoaders
-print('Creating DataLoaders...')
+print('Creating DataLoaders...\n')
 train_loader = DataLoader(
     TensorDataset(X_train_tensor, y_train_tensor),
     batch_size=64,
@@ -92,6 +93,7 @@ valid_loader = DataLoader(
 test_loader = DataLoader(
     TensorDataset(X_test_tensor, y_test_tensor),
     batch_size=64)
+print('Epoch\tTrain loss\tValid loss\tValid acc. (%)')
 
 # Initialise network parameters
 class MLP(nn.Module):
@@ -100,9 +102,10 @@ class MLP(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(1024, 256),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5),
             nn.Linear(256, 128),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(128, 1))
     
     def forward(self, x):
@@ -111,22 +114,27 @@ class MLP(nn.Module):
         return x
     
 model = MLP()
-
 optimiser = torch.optim.Adam(model.parameters(),
                              lr=0.001,
                              weight_decay=1e-5)
+
+num_pos = (y_train_tensor == 1).sum().item()
+num_neg = (y_train_tensor == 0).sum().item()
+pos_weight = torch.tensor([num_neg / num_pos],
+                          dtype=torch.float32)
+
 scheduler = StepLR(optimiser,
                    step_size=5,
                    gamma=0.5)
-loss_fn = nn.BCEWithLogitsLoss()
+loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
 mean_train_losses = []
 mean_valid_losses = []
 valid_acc_list = []
 
-epochs = 20
+epochs = 50
 best_val_loss = float('inf')
-patience = 5
+patience = 8
 patience_counter = 0
 
 for epoch in range(epochs):
@@ -136,17 +144,13 @@ for epoch in range(epochs):
     valid_losses = []
 
     # train the model
-    for i, (images, labels) in enumerate(train_loader):
+    for images, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=False):
         optimiser.zero_grad()
         outputs = model(images)
         loss = loss_fn(outputs, labels.view(-1, 1))
         loss.backward()
         optimiser.step()
-
         train_losses.append(loss.item())
-
-        if (i * 128) % (128 * 100) == 0:
-            print(f'{i * 128} / 50000')
 
     model.eval()
     correct = 0
@@ -167,7 +171,7 @@ for epoch in range(epochs):
     avg_val_loss = np.mean(valid_losses)
     accuracy = 100*correct/total
     valid_acc_list.append(accuracy)
-    print(f'Epoch: {epoch+1}, train loss: {np.mean(train_losses):.4f}, valid loss: {np.mean(valid_losses):.4f}, valid acc.: {accuracy:.2f}%')
+    print(f'{epoch+1}\t{np.mean(train_losses):.4f}\t\t{np.mean(valid_losses):.4f}\t\t{accuracy:.2f}')
 
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
@@ -181,7 +185,8 @@ for epoch in range(epochs):
             break
 
     scheduler.step()
-        
+
+# Assess model's performance on test set        
 model.load_state_dict(torch.load('best_model.pt'))    
 model.eval()
 
@@ -199,21 +204,19 @@ with torch.no_grad():
         all_labels.extend(labels.cpu().numpy().flatten())
         all_probs.extend(probs.cpu().numpy().flatten())
 
-    print('Confusion matrix for test set:')
-    print(confusion_matrix(all_labels, all_preds, normalize='true'))
+    print('\nConfusion matrix for test set:')
+    print(confusion_matrix(all_labels, all_preds, normalize='true'),'\n')
 
     fpr, tpr, _ = roc_curve(all_labels, all_probs)
     auc = roc_auc_score(all_labels, all_probs)
 
     plt.figure(figsize=(8, 6))
-    plt.plot(
-        fpr, tpr,
-        label=f'FOC curve (AUC = {auc:.2f})',
-        color='darkorange')
-    plt.plot(
-        [0, 1], [0, 1],
-        'k--',
-        label='Random Guess')
+    plt.plot(fpr, tpr,
+             label=f'FOC curve (AUC = {auc:.2f})',
+             color='darkorange')
+    plt.plot([0, 1], [0, 1],
+             'k--',
+             label='Random Guess')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic, ROC')
