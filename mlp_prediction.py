@@ -7,16 +7,17 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
+from torch.optim.lr_scheduler import StepLR
 import warnings
 
 warnings.filterwarnings('ignore')
 
 # Read in data from .parquet/.h5 file
 print('Reading data from parquet file...')
-#data = pd.read_parquet('D:/3D_data/output/embeddings/1-60-60_mae_cell_embeddings.parquet',
-#                     engine='fastparquet')
-data = pd.read_parquet('~/projects/deon/3D_data/embeddings/1-60-60_mae_cell_embeddings.parquet',
+data = pd.read_parquet('D:/3D_data/output/embeddings/1-60-60_mae_cell_embeddings.parquet',
                      engine='fastparquet')
+#data = pd.read_parquet('~/projects/deon/3D_data/embeddings/1-60-60_mae_cell_embeddings.parquet',
+#                     engine='fastparquet')
 
 # Split data into target and features, then train/val/test sets on image level
 print('Splitting data into training, validation, and test sets by image groups...')
@@ -45,12 +46,16 @@ for val_idx, test_idx in sss2.split(temp, temp['label']):
 
 # Extract features and target from each split
 print('Splitting data into features and target from each split...')
+features = data.iloc[:, 11:]
+ft_0 = features.columns[0:1024].tolist()
+ft_1 = features.columns[1024:2048].tolist()
+
 ft = [col for col in data.columns if 'embedding' in col]
-X_train = train[ft].values
+X_train = train[ft_0].values
 y_train = train['intensity_1'].values
-X_valid = valid[ft].values
+X_valid = valid[ft_0].values
 y_valid = valid['intensity_1'].values
-X_test = test[ft].values
+X_test = test[ft_0].values
 y_test = test['intensity_1'].values
 
 # Scale training set
@@ -93,12 +98,12 @@ class MLP(nn.Module):
     def __init__(self):
         super(MLP, self).__init__()
         self.layers = nn.Sequential(
-            nn.Linear(2048, 512),
+            nn.Linear(1024, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(512, 256),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(256, 1))
+            nn.Linear(128, 1))
     
     def forward(self, x):
         x = x.view(x.size(0), -1)
@@ -107,10 +112,12 @@ class MLP(nn.Module):
     
 model = MLP()
 
-optimiser = torch.optim.Adam(
-    model.parameters(),
-    lr=0.001,
-    weight_decay=1e-5)
+optimiser = torch.optim.Adam(model.parameters(),
+                             lr=0.001,
+                             weight_decay=1e-5)
+scheduler = StepLR(optimiser,
+                   step_size=5,
+                   gamma=0.5)
 loss_fn = nn.BCEWithLogitsLoss()
 
 mean_train_losses = []
@@ -172,11 +179,11 @@ for epoch in range(epochs):
             print('Early stopping triggered.')
             torch.save(model.state_dict(), 'best_model.pt')
             break
+
+    scheduler.step()
         
 model.load_state_dict(torch.load('best_model.pt'))    
 model.eval()
-correct = 0
-total = 0
 
 all_preds = []
 all_labels = []
@@ -188,32 +195,32 @@ with torch.no_grad():
         probs = torch.sigmoid(outputs).view(-1)
         preds = (probs > 0.5).int()
 
-        all_preds.append(preds.cpu().numpy())
-        all_labels.append(labels.cpu().numpy())
-        all_probs.append(probs.cpu().numpy())
-
-        correct += (preds == labels).sum().item()
-        total += labels.size(0)
+        all_preds.extend(preds.cpu().numpy().flatten())
+        all_labels.extend(labels.cpu().numpy().flatten())
+        all_probs.extend(probs.cpu().numpy().flatten())
 
     print('Confusion matrix for test set:')
     print(confusion_matrix(all_labels, all_preds, normalize='true'))
 
-    accuracy = 100 * correct/total
-    print(f'Test accuracy: {accuracy:.2f}%')
-
     fpr, tpr, _ = roc_curve(all_labels, all_probs)
     auc = roc_auc_score(all_labels, all_probs)
 
-    plt.figure()
-    plt.plot(fpr, tpr, label=f'AUC = {auc:.4f}')
-    plt.plot([0, 1], [0, 1], 'k--')
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        fpr, tpr,
+        label=f'FOC curve (AUC = {auc:.2f})',
+        color='darkorange')
+    plt.plot(
+        [0, 1], [0, 1],
+        'k--',
+        label='Random Guess')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC Curve')
+    plt.title('Receiver Operating Characteristic, ROC')
     plt.legend(loc='lower right')
-    plt.grid()
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
 
-    fig_path = f'~/projects/deon/3D_data/mlp_output/MLP_ROC_AUC.png'
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    #fig_path = f'~/projects/deon/3D_data/mlp_output/MLP_ROC_AUC.png'
+    #plt.savefig(fig_path, dpi=300, bbox_inches='tight')
