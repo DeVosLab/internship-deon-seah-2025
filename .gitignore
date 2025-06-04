@@ -1,2 +1,3 @@
-# Ignore temp files
+# Ignore temp files/folders
 *.pt
+/__pycache__/
