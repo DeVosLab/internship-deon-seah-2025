@@ -85,14 +85,14 @@ y_test_tensor = torch.tensor(y_test_bin, dtype=torch.float32).reshape(-1, 1)
 print('Creating DataLoaders...\n')
 train_loader = DataLoader(
     TensorDataset(X_train_tensor, y_train_tensor),
-    batch_size=64,
+    batch_size=32,
     shuffle=True)
 valid_loader = DataLoader(
     TensorDataset(X_valid_tensor, y_valid_tensor),
-    batch_size=64)
+    batch_size=32)
 test_loader = DataLoader(
     TensorDataset(X_test_tensor, y_test_tensor),
-    batch_size=64)
+    batch_size=32)
 print('Epoch\tTrain loss\tValid loss\tValid acc. (%)')
 
 # Initialise network parameters

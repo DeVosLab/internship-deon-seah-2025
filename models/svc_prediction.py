@@ -12,15 +12,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-"""
-o Try a simpler model instead of a neural network--sklearn one-class SVM or SVC
-o In one-class SVM: positive cells are anomalies
-o In SVC: positive and negative cells are two classes
-o Be careful to not overfit on the negative class (majority); model could consider all points negative
-o Train on the whole dataset
-o Subdivide data on image level first, training 70%, validation 20%, testing 10%
-"""
-
 # Read in data from .parquet/.h5 file
 print('Reading data from parquet file...')
 data = pd.read_parquet('D:/3D_data/output/embeddings/1-60-60_mae_cell_embeddings.parquet',
