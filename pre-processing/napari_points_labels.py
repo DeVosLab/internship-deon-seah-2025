@@ -65,6 +65,7 @@ def main(**kwargs):
     sample = kwargs['sample']
     do_out_of_slice = kwargs['do_out_of_slice']
     hide_all_points = kwargs['hide_all_points']
+    point_size = kwargs['point_size']
 
     image = preprocess_image(h5_path, memb_size, sample)
     channel_labels = read_labels_coords(labels_path, sample)
@@ -94,7 +95,7 @@ def main(**kwargs):
             cluster_points = points[cluster_mask]
             viewer.add_points(
                 data=cluster_points,
-                size=10,
+                size=point_size,
                 name=f'channel {channel}, cluster {cluster}',
                 face_color=[cluster_colours[cluster]] * len(cluster_points),
                 ndim=3,
@@ -120,6 +121,8 @@ def parse_args():
                         help='Toggle out_of_slice_display for all points layers')
     parser.add_argument('--hide_all_points', action='store_true',
                         help='Hides all points layers, can be manually unhidden')
+    parser.add_argument('--point_size', type=int, default=10,
+                        help='Specify size of each point in points layer.')
     args = parser.parse_args()
 
     return args
