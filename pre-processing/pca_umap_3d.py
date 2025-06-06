@@ -296,6 +296,9 @@ def main(**kwargs):
                     s=3)
                 fig.colorbar(scatter, ax=ax, label=colour_fields[i], shrink=0.5)
                 ax.set_title(f'{method} of Channel {channel} - Coloured by {colour_fields[i] if channel == 0 else colour_fields[i+4]}')
+                ax.set_xlabel('Component 1')
+                ax.set_ylabel('Component 2')
+                ax.set_zlabel('Component 3')
 
             # create a fifth plot, coloured by octant regions
             elif i == 4:
@@ -308,6 +311,9 @@ def main(**kwargs):
                     s=3)
                 fig.colorbar(scatter, ax=ax, label='octant_region', shrink=0.5)
                 ax.set_title(f'{method} of Channel {channel} - Coloured by octant_region')
+                ax.set_xlabel('Component 1')
+                ax.set_ylabel('Component 2')
+                ax.set_zlabel('Component 3')
 
             # remaining plots coloured by clusters
             elif clustermap:
@@ -321,6 +327,9 @@ def main(**kwargs):
                     s=3)
                 fig.colorbar(scatter, ax=ax, label='clusters', shrink=0.5)
                 ax.set_title(f'{method} of Channel {channel} -\nColoured by clusters at level {level}')
+                ax.set_xlabel('Component 1')
+                ax.set_ylabel('Component 2')
+                ax.set_zlabel('Component 3')
 
         fig_path = f'{plots_dir}\\{time_stamp}_{sample}_channel_{channel}_{coords_type}_{method}_plot.png'
         fig.savefig(fig_path, dpi=300, bbox_inches='tight')
