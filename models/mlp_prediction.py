@@ -17,15 +17,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Split data into target and features, then train/val/test sets on image level
-def split_data(input_path):
+def split_data(input_path, intensity_threshold):
     data = pd.read_parquet(input_path,
                            engine='fastparquet')
 
     # create labels to identify positive/negative cells
-    imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= 2500).mean()).reset_index()
+    imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= intensity_threshold).mean()).reset_index()
     imgs['label'] = (imgs['intensity_1'])
     # binarise intensity_1 labels
-    data['label'] = (data['intensity_1'] >= 2500).astype(int)
+    data['label'] = (data['intensity_1'] >= intensity_threshold).astype(int)
 
     # first split: train/(valid+test) 70/30
     sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
@@ -47,8 +47,8 @@ def split_data(input_path):
     return data, train, valid, test
 
 # Process features and target into dataloaders
-def process_features(input_path, on_channel):
-    data, train, valid, test = split_data(input_path)
+def process_features(input_path, on_channel, intensity_threshold):
+    data, train, valid, test = split_data(input_path, intensity_threshold)
 
     # extract features & target by channel
     features = data.iloc[:, 11:]
@@ -71,9 +71,9 @@ def process_features(input_path, on_channel):
     X_test_scaled = scaler.transform(X_test)
 
     # binarise y values
-    y_train_bin = (y_train >= 2500).astype(int)
-    y_valid_bin = (y_valid >= 2500).astype(int)
-    y_test_bin = (y_test >= 2500).astype(int)
+    y_train_bin = (y_train >= intensity_threshold).astype(int)
+    y_valid_bin = (y_valid >= intensity_threshold).astype(int)
+    y_test_bin = (y_test >= intensity_threshold).astype(int)
 
     # convert to PyTorch tensors
     X_train_tensor = torch.tensor(X_train_scaled,
@@ -130,14 +130,16 @@ class MLP(nn.Module):
 def main(**kwargs):
     assert kwargs['input_path'] is not None
     assert kwargs['output_path'] is not None
+    assert kwargs['intensity_thresh'] is not None
 
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     input_path = kwargs['input_path']
     output_path = kwargs['output_path']
+    intensity_threshold = kwargs['intensity_thresh']
     Path(output_path).mkdir(exist_ok=True, parents=True)
     on_channel = kwargs['on_channel']
 
-    train, valid, test , pos_weight = process_features(input_path, on_channel)
+    train, valid, test , pos_weight = process_features(input_path, on_channel, intensity_threshold)
 
     print('Epoch\tTrain loss\tValid loss\tValid acc. (%)')
 
@@ -261,6 +263,8 @@ def parse_args():
                         help='Path to output folder')
     parser.add_argument('--on_channel', type=int, default=0,
                         help='Channel on which prediction is performed')
+    parser.add_argument('--intensity_thresh', type=int, default=None,
+                        help='Define the intensity threshold for binary classification')
     args = parser.parse_args()
     
     return args
