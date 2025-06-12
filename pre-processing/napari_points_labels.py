@@ -9,16 +9,8 @@ import numpy as np
 import pandas as pd
 import h5py
 
-"""
-o Load in sample image (.h5)
-o Read in labels and coords of this sample
-o Using different colours, render the points on the image channels
-o One image layer per channel
-o One points layer per cluster
-"""
-
 # Load image file and preprocess image from the HDF5 file
-def preprocess_image(h5_path, memb_size, sample):
+def preprocess_image(h5_path, memb_size, extracted_slices, sample):
     if Path(h5_path).is_file():
         f = h5py.File(h5_path, 'r')
 
@@ -33,7 +25,28 @@ def preprocess_image(h5_path, memb_size, sample):
         raise ValueError(f'Provided path is neither a .h5 file or file family: {Path(h5_path)}')
     
     with f:
-        img = f[sample]['img'][:]
+
+        # visualise only the extracted slices
+        if extracted_slices:
+            group = f[sample]
+
+            img = group['img'][()]
+            z = group['z'][()]
+
+            z_counts = np.bincount(z, minlength=img.shape[0])
+            z_centre = np.argmax(z_counts)
+
+            half = 15 // 2
+            z_start = max(0, z_centre - half)
+            z_end = min(img.shape[0], z_start + 15)
+            z_start = max(0, z_end - 15)
+            img = img[z_start:z_end, :, :, :]
+
+            print(f'Visualising slices {z_start}:{z_end}')
+        
+        # visualise the entire image
+        else:
+            img = f[sample]['img'][:]
 
     img = np.transpose(
         img,
@@ -58,6 +71,7 @@ def main(**kwargs):
     assert kwargs['h5_path'] is not None
     assert kwargs['labels_path'] is not None
     assert kwargs['sample'] is not None
+    assert kwargs['voxelsize'] is not None
 
     h5_path = kwargs['h5_path']
     memb_size = kwargs['memb_size']
@@ -66,8 +80,10 @@ def main(**kwargs):
     do_out_of_slice = kwargs['do_out_of_slice']
     hide_all_points = kwargs['hide_all_points']
     point_size = kwargs['point_size']
+    voxsize = kwargs['voxelsize']
+    extracted_slices = kwargs['extracted_slices']
 
-    image = preprocess_image(h5_path, memb_size, sample)
+    image = preprocess_image(h5_path, memb_size, extracted_slices, sample)
     channel_labels = read_labels_coords(labels_path, sample)
 
     # Initialise napari
@@ -77,9 +93,9 @@ def main(**kwargs):
     viewer.add_image(
         image,
         channel_axis=0,
-        colormap=['green','magenta'],
+        colormap=['gray','magenta'],
         name=f'{sample}',
-        scale=(5, 0.64, 0.64))
+        scale=voxsize)
 
     # Add points layer; one per cluster (35)
     for channel, coords_label in channel_labels.items():
@@ -102,7 +118,7 @@ def main(**kwargs):
                 out_of_slice_display=True if do_out_of_slice else False,
                 symbol='o',
                 visible=False if hide_all_points else True,
-                scale=(5, 0.64, 0.64)
+                scale=voxsize
                 )
 
     napari.run()
@@ -122,7 +138,11 @@ def parse_args():
     parser.add_argument('--hide_all_points', action='store_true',
                         help='Hides all points layers, can be manually unhidden')
     parser.add_argument('--point_size', type=int, default=10,
-                        help='Specify size of each point in points layer.')
+                        help='Specify size of each point in points layer')
+    parser.add_argument('--voxelsize', type=float, nargs='+', default=None,
+                        help='Defines the voxel size of the image in Z, Y, X')
+    parser.add_argument('--extracted_slices', action='store_true',
+                        help='Only visualises extracted slices')
     args = parser.parse_args()
 
     return args
