@@ -214,9 +214,9 @@ def main(**kwargs):
                 g.figure.suptitle(f'Channel {channel} Clustermap: Level {level} ({n_clusters} clusters)',
                                   y=1.02)
                 
-                labels_dir = Path(output_path).joinpath(f'labels\\{sample}')
+                labels_dir = Path(output_path).joinpath(f'labels/{sample}')
                 labels_dir.mkdir(exist_ok=True, parents=True)
-                plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
+                plots_dir = Path(output_path).joinpath(f'plots/{sample}')
                 plots_dir.mkdir(exist_ok=True, parents=True) 
 
                 df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
@@ -224,9 +224,9 @@ def main(**kwargs):
                 df['cp1'] = channel_ft[:, 0]
                 df['cp2'] = channel_ft[:, 1]
                 df['cp3'] = channel_ft[:, 2]
-                df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.csv')
+                df.to_csv(f'{labels_dir}/{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.csv')
 
-                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.png'
+                fig_path = f'{plots_dir}/{time_stamp}_{sample}_{method}_clustermap_channel_{channel}_lvl{level}.png'
                 g.figure.savefig(fig_path, dpi=300, bbox_inches='tight')
             print(f'Saved clustermaps for channel {channel}')
 
@@ -237,7 +237,7 @@ def main(**kwargs):
     if coords_type != 'cartesian':
         print(f'Converted Cartesian coordinates to {coords_type} coordinates')
     
-    plots_dir = Path(output_path).joinpath(f'plots\\{sample}')
+    plots_dir = Path(output_path).joinpath(f'plots/{sample}')
     plots_dir.mkdir(exist_ok=True, parents=True) 
 
     # defining more params for polar
@@ -331,7 +331,7 @@ def main(**kwargs):
                 ax.set_ylabel('Component 2')
                 ax.set_zlabel('Component 3')
 
-        fig_path = f'{plots_dir}\\{time_stamp}_{sample}_channel_{channel}_{coords_type}_{method}_plot.png'
+        fig_path = f'{plots_dir}/{time_stamp}_{sample}_channel_{channel}_{coords_type}_{method}_plot.png'
         fig.savefig(fig_path, dpi=300, bbox_inches='tight')
         print(f'Saved plotted features for: {sample}, Channel {channel}')
         plt.tight_layout()
@@ -358,12 +358,12 @@ def main(**kwargs):
                 s=3)
             fig.colorbar(scatter, ax=ax, label='Cluster labels', shrink=0.5)
             ax.set_title(f'HDBSCAN Clustering of Channel {channel}')
-            fig_path = f'{plots_dir}\\{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
+            fig_path = f'{plots_dir}/{time_stamp}_{sample}_{method}_HDBSCAN_clustering.png'
             fig.savefig(fig_path, dpi=300, bbox_inches='tight')
             plt.tight_layout()
 
             # save labels, coordinates, and components to .csv file
-            labels_dir = Path(output_path).joinpath(f'labels\\{sample}')
+            labels_dir = Path(output_path).joinpath(f'labels/{sample}')
             labels_dir.mkdir(exist_ok=True, parents=True)
 
             df = pd.DataFrame(data.iloc[:, 4:7], columns=['z', 'y', 'x'])
@@ -371,7 +371,7 @@ def main(**kwargs):
             df['cp1'] = channel_components[:, 0]
             df['cp2'] = channel_components[:, 1]
             df['cp3'] = channel_components[:, 2]
-            df.to_csv(f'{labels_dir}\\{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
+            df.to_csv(f'{labels_dir}/{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
             print(f'Saved labels and coordinates for channel {channel}')
 
         # plot condensed cluster trees
@@ -381,7 +381,7 @@ def main(**kwargs):
                 plt.figure(figsize=(8, 6))
                 clusterer.condensed_tree_.plot(select_clusters=True)
                 plt.title(f'Condensed Cluster Tree - Channel {i}')
-                fig_path = f'{plots_dir}\\{time_stamp}_{sample}_HDBSCAN_cluster_tree_channel_{channel}.png'
+                fig_path = f'{plots_dir}/{time_stamp}_{sample}_HDBSCAN_cluster_tree_channel_{channel}.png'
                 plt.savefig(fig_path, dpi=300, bbox_inches='tight')
                 plt.tight_layout()
 
