@@ -8,7 +8,7 @@ import pandas as pd
 import h5py
 
 # Load image file and preprocess image from the HDF5 file
-def preprocess_image(h5_path, memb_size, extracted_slices, sample):
+def preprocess_image(h5_path, memb_size, extracted_slices, sample, do_mip):
     if Path(h5_path).is_file():
         f = h5py.File(h5_path, 'r')
 
@@ -46,6 +46,9 @@ def preprocess_image(h5_path, memb_size, extracted_slices, sample):
     img = np.transpose(
         img,
         (1, 0, 2, 3)) # transposes image shape (prev. z, c, y, x, now c, z, y, x)
+    
+    if do_mip:
+        img = np.max(img, axis=1) # applies max projection on z, now c, y, x
 
     return img
 
@@ -80,8 +83,9 @@ def main(**kwargs):
     point_size = kwargs['point_size']
     voxsize = kwargs['voxelsize']
     extracted_slices = kwargs['extracted_slices']
+    do_mip = kwargs['do_mip']
 
-    image = preprocess_image(h5_path, memb_size, extracted_slices, sample)
+    image = preprocess_image(h5_path, memb_size, extracted_slices, sample, do_mip)
     points, pred_prob, pred_class, true_label = read_labels_coords(labels_path)
 
     # Initialise napari
@@ -93,7 +97,8 @@ def main(**kwargs):
         channel_axis=0,
         colormap=['gray','magenta'],
         name=f'{sample}',
-        scale=voxsize)
+        scale=voxsize[1:] if do_mip else voxsize
+        )
 
     # Add points layer for predicted class
     unique_class = sorted(set(pred_class))
@@ -113,7 +118,7 @@ def main(**kwargs):
             out_of_slice_display=True if do_out_of_slice else False,
             symbol='o',
             visible=False if hide_all_points else True,
-            scale=voxsize
+            scale=voxsize[1:] if do_mip else voxsize
             )
         
     # Add points layer for ground truth labelling
@@ -134,7 +139,7 @@ def main(**kwargs):
             out_of_slice_display=True if do_out_of_slice else False,
             symbol='o',
             visible=False if hide_all_points else True,
-            scale=voxsize
+            scale=voxsize[1:] if do_mip else voxsize
             )
     
     # Add points layer for predicted probabilities
@@ -149,7 +154,7 @@ def main(**kwargs):
         out_of_slice_display=True if do_out_of_slice else False,
         symbol='o',
         visible=False if hide_all_points else True,
-        scale=voxsize
+        scale=voxsize[1:] if do_mip else voxsize
         )
 
     napari.run()
@@ -174,6 +179,8 @@ def parse_args():
                         help='Defines the voxel size of the image in Z, Y, X')
     parser.add_argument('--extracted_slices', action='store_true',
                         help='Only visualises extracted slices')
+    parser.add_argument('--do_mip', action='store_true',
+                        help='Performs maximum intensity projection along z-axis')
     args = parser.parse_args()
 
     return args
