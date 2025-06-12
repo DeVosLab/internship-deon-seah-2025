@@ -252,7 +252,7 @@ def main(**kwargs):
         plt.legend(loc='lower right')
         plt.grid(True)
 
-        fig_path = f'{fig_dir}\\{time_stamp}_MLP_ROC_AUC_channel_{on_channel}.png'
+        fig_path = f'{fig_dir}/{time_stamp}_MLP_ROC_AUC_channel_{on_channel}.png'
         plt.savefig(fig_path, dpi=300, bbox_inches='tight')
         print(f'Saved ROC!')
 
@@ -275,7 +275,7 @@ def main(**kwargs):
         test_data = test_data[test_data['filename_img'].apply(lambda p: Path(p).stem == sample)]
 
     # Save predictions to CSV
-    csv_path = f'{fig_dir}\\{time_stamp}_test_predictions_channel_{on_channel}.csv'
+    csv_path = f'{fig_dir}/{time_stamp}_test_predictions_channel_{on_channel}.csv'
     test_data.to_csv(csv_path, index=False)
     print('Saved predictions!')
 
