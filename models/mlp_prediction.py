@@ -39,16 +39,18 @@ def split_data(input_path, intensity_threshold):
         valid = temp.iloc[val_idx]
         test = temp.iloc[test_idx]
 
-    ## split on an image level
-    #train = data[data['filename_img'].isin(train_imgs)].reset_index(drop=True)
-    #valid = data[data['filename_img'].isin(valid_imgs)].reset_index(drop=True)
-    #test = data[data['filename_img'].isin(test_imgs)].reset_index(drop=True)
+    filename_coords = test[['filename_img', 'z', 'y', 'x', 'intensity_1']].values
 
-    return data, train, valid, test
+    ## split on an image level
+    #train = data[data['filename_img'].isin(train)].reset_index(drop=True)
+    #valid = data[data['filename_img'].isin(valid)].reset_index(drop=True)
+    #test = data[data['filename_img'].isin(test)].reset_index(drop=True)
+
+    return data, train, valid, test, filename_coords
 
 # Process features and target into dataloaders
 def process_features(input_path, on_channel, intensity_threshold):
-    data, train, valid, test = split_data(input_path, intensity_threshold)
+    data, train, valid, test, filename_coords = split_data(input_path, intensity_threshold)
 
     # extract features & target by channel
     features = data.iloc[:, 11:]
@@ -107,7 +109,7 @@ def process_features(input_path, on_channel, intensity_threshold):
     pos_weight = torch.tensor([num_neg / num_pos],
                             dtype=torch.float32)
 
-    return train_loader, valid_loader, test_loader, pos_weight
+    return train_loader, valid_loader, test_loader, pos_weight, filename_coords
 
 # Initialise network parameters
 class MLP(nn.Module):
@@ -128,6 +130,7 @@ class MLP(nn.Module):
         return x
 
 def main(**kwargs):
+
     assert kwargs['input_path'] is not None
     assert kwargs['output_path'] is not None
     assert kwargs['intensity_thresh'] is not None
@@ -135,11 +138,12 @@ def main(**kwargs):
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     input_path = kwargs['input_path']
     output_path = kwargs['output_path']
-    intensity_threshold = kwargs['intensity_thresh']
     Path(output_path).mkdir(exist_ok=True, parents=True)
+    intensity_threshold = kwargs['intensity_thresh']
     on_channel = kwargs['on_channel']
+    sample_confirm = kwargs['sample_confirm']
 
-    train, valid, test , pos_weight = process_features(input_path, on_channel, intensity_threshold)
+    train, valid, test, pos_weight, filename_coords = process_features(input_path, on_channel, intensity_threshold)
 
     print('Epoch\tTrain loss\tValid loss\tValid acc. (%)')
 
@@ -248,12 +252,34 @@ def main(**kwargs):
         plt.legend(loc='lower right')
         plt.grid(True)
 
-        fig_path = f'{fig_dir}\\{time_stamp}_MLP_ROC_AUC_on_channel_{on_channel}.png'
+        fig_path = f'{fig_dir}\\{time_stamp}_MLP_ROC_AUC_channel_{on_channel}.png'
         plt.savefig(fig_path, dpi=300, bbox_inches='tight')
         print(f'Saved ROC!')
 
         plt.tight_layout()
-        plt.show()
+
+    # Merge with original test data
+    if sample_confirm is not None:
+        print('Saving true labels, predicted probabilities, and predicted class for all samples...')
+    else:
+        print(f'Saving true labels, predicted probabilities, and predicted class for {sample_confirm}...')
+    test_data = pd.DataFrame(filename_coords[:, 0:5], columns=['filename_img', 'z', 'y', 'x', 'intensity_1'])
+    test = test_data[['intensity_1']].values
+    test_bin = (test >= intensity_threshold).astype(int)
+    test_data['true_labels'] = test_bin
+    test_data['predicted_probability'] = all_probs
+    test_data['predicted_class'] = all_preds
+
+    if sample_confirm is not None:
+        sample = sample_confirm
+        test_data = test_data[test_data['filename_img'].apply(lambda p: Path(p).stem == sample)]
+
+    # Save predictions to CSV
+    csv_path = f'{fig_dir}\\{time_stamp}_test_predictions_channel_{on_channel}.csv'
+    test_data.to_csv(csv_path, index=False)
+    print('Saved predictions!')
+
+    plt.show()
 
 def parse_args():
     parser = ArgumentParser(description='Class Label Prediction using SVC model')
@@ -265,6 +291,8 @@ def parse_args():
                         help='Channel on which prediction is performed')
     parser.add_argument('--intensity_thresh', type=int, default=None,
                         help='Define the intensity threshold for binary classification')
+    parser.add_argument('--sample_confirm', type=str, default=None,
+                        help='If unspecified, all data will be saved to a CSV file, if specified, only data for selected sample will be saved.')
     args = parser.parse_args()
     
     return args
