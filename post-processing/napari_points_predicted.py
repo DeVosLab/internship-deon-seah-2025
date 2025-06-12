@@ -110,11 +110,11 @@ def main(**kwargs):
         cluster_mask = pred_class == each_class
         cluster_points = points[cluster_mask]
         viewer.add_points(
-            data=cluster_points,
+            data=cluster_points[:, 1:] if do_mip else cluster_points,
             size=point_size,
             name=f'predicted class {each_class}',
             face_color=[cluster_colours[each_class]] * len(cluster_points),
-            ndim=3,
+            ndim=2 if do_mip else 3,
             out_of_slice_display=True if do_out_of_slice else False,
             symbol='o',
             visible=False if hide_all_points else True,
@@ -131,11 +131,11 @@ def main(**kwargs):
         cluster_mask = true_label == cluster
         cluster_points = points[cluster_mask]
         viewer.add_points(
-            data=cluster_points,
+            data=cluster_points[:, 1:] if do_mip else cluster_points,
             size=point_size,
             name=f'true class {cluster}',
             face_color=[cluster_colours[cluster]] * len(cluster_points),
-            ndim=3,
+            ndim=2 if do_mip else 3,
             out_of_slice_display=True if do_out_of_slice else False,
             symbol='o',
             visible=False if hide_all_points else True,
@@ -144,13 +144,13 @@ def main(**kwargs):
     
     # Add points layer for predicted probabilities
     viewer.add_points(
-        data=points,
+        data=points[:, 1:] if do_mip else points,
         size=point_size,
         name='predicted probabilities',
         features={'pred_prob': pred_prob},
         face_color='pred_prob',
         face_colormap='inferno',
-        ndim=3,
+        ndim=2 if do_mip else 3,
         out_of_slice_display=True if do_out_of_slice else False,
         symbol='o',
         visible=False if hide_all_points else True,
