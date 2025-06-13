@@ -13,27 +13,38 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Split data into target and features, then train/val/test sets on image level
-def split_data(input_path):
-    data = pd.read_parquet(input_path,
-                           engine='fastparquet')
+def split_data(input_path, intensity_threshold):
+
+    # read in the data
+    print('Reading data...')
+    data = pd.read_parquet(input_path, engine='fastparquet')
 
     # create labels to identify positive/negative cells
-    imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= 2500).mean()).reset_index()
+    imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= intensity_threshold).mean()).reset_index()
     imgs['label'] = (imgs['intensity_1'])
     # binarise intensity_1 labels
-    data['label'] = (data['intensity_1'] >= 2500).astype(int)
+    data['label'] = (data['intensity_1'] >= intensity_threshold).astype(int)
 
     # first split: train/(valid+test) 70/30
+    print('Splitting training set...')
     sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
     for train_idx, temp_idx in sss.split(data, data['label']):
         train = data.iloc[train_idx]
         temp = data.iloc[temp_idx]
 
     # second split: valid/test 10/20
+    print('Splitting validation and test sets...')
     sss2 = StratifiedShuffleSplit(n_splits=1, test_size=2/3, random_state=42)
     for val_idx, test_idx in sss2.split(temp, temp['label']):
         valid = temp.iloc[val_idx]
         test = temp.iloc[test_idx]
+
+    print('\nTrain set distribution:')
+    print(train['label'].value_counts())
+    print('\nValid set distribution:')
+    print(valid['label'].value_counts())
+    print('\nTest set distribution:')
+    print(test['label'].value_counts())
 
     ## split on an image level
     #train = data[data['filename_img'].isin(train)].reset_index(drop=True)
@@ -43,8 +54,8 @@ def split_data(input_path):
     return data, train, valid, test
 
 # Process features and target
-def process_features(input_path, on_channel):
-    data, train, valid, test = split_data(input_path)
+def process_features(input_path, on_channel, intensity_threshold):
+    data, train, valid, test = split_data(input_path, intensity_threshold)
 
     # extract features & target by channel
     features = data.iloc[:, 11:]
@@ -67,9 +78,9 @@ def process_features(input_path, on_channel):
     X_test_scaled = scaler.transform(X_test)
 
     # binarise y values
-    y_train_bin = (y_train >= 2500).astype(int)
-    y_valid_bin = (y_valid >= 2500).astype(int)
-    y_test_bin = (y_test >= 2500).astype(int)
+    y_train_bin = (y_train >= intensity_threshold).astype(int)
+    y_valid_bin = (y_valid >= intensity_threshold).astype(int)
+    y_test_bin = (y_test >= intensity_threshold).astype(int)
 
     # initialise UMAP model
     umap_model = UMAP(
@@ -80,24 +91,27 @@ def process_features(input_path, on_channel):
         random_state=42)
 
     # reduce dimensions for all features    
-    X_train_reduced = umap_model.fit_transform(X_train)
-    X_valid_reduced = umap_model.transform(X_valid)
-    X_test_reduced = umap_model.transform(X_test)
+    X_train_reduced = umap_model.fit_transform(X_train_scaled)
+    X_valid_reduced = umap_model.transform(X_valid_scaled)
+    X_test_reduced = umap_model.transform(X_test_scaled)
 
     return X_train_reduced, X_valid_reduced, X_test_reduced, y_train_bin, y_valid_bin, y_test_bin
 
 # Train SVM model
 def main(**kwargs):
     assert kwargs['input_path'] is not None
+    assert kwargs['on_channel'] is not None
     assert kwargs['output_path'] is not None
+    assert kwargs['intensity_thresh'] is not None
 
     time_stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     input_path = kwargs['input_path']
     output_path = kwargs['output_path']
     Path(output_path).mkdir(exist_ok=True, parents=True)
+    intensity_threshold = kwargs['intensity_thresh']
     on_channel = kwargs['on_channel']
 
-    X_train, X_valid, X_test, y_train, y_valid, y_test = process_features(input_path, on_channel)
+    X_train, X_valid, X_test, y_train, y_valid, y_test = process_features(input_path, on_channel, intensity_threshold)
 
     # initialise SVC model
     svc_model = SVC(
@@ -114,7 +128,7 @@ def main(**kwargs):
     val_predict = svc_model.predict(X_valid)
     prediction = svc_model.predict(X_test)
 
-    print('Classification report for validation set:')
+    print('\nClassification report for validation set:')
     print(classification_report(y_valid, val_predict))
 
     print('Confusion matrix for test set:')
@@ -146,7 +160,7 @@ def main(**kwargs):
     
     fig_path = f'{fig_dir}\\{time_stamp}_SVC_ROC_AUC_on_channel_{on_channel}.png'
     plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-    print(f'Saved ROC!')
+    print(f'\nSaved ROC!\n')
 
     plt.tight_layout()
     plt.show()
@@ -157,8 +171,12 @@ def parse_args():
                         help='Path to input file with features')
     parser.add_argument('--output_path', type=str, default=None,
                         help='Path to output folder')
-    parser.add_argument('--on_channel', type=int, default=0,
+    parser.add_argument('--on_channel', type=int, default=None,
                         help='Channel on which prediction is performed')
+    parser.add_argument('--intensity_thresh', type=int, default=None,
+                        help='Define the intensity threshold for binary classification')
+        # cerebral dataset 160
+        # breast dataset  2500
     args = parser.parse_args()
     
     return args

@@ -18,8 +18,10 @@ warnings.filterwarnings('ignore')
 
 # Split data into target and features, then train/val/test sets on image level
 def split_data(input_path, intensity_threshold):
-    data = pd.read_parquet(input_path,
-                           engine='fastparquet')
+    
+    # read in the data
+    print('Reading data...')
+    data = pd.read_parquet(input_path, engine='fastparquet')
 
     # create labels to identify positive/negative cells
     imgs = data.groupby('filename_img')['intensity_1'].apply(lambda x: (x >= intensity_threshold).mean()).reset_index()
@@ -28,18 +30,27 @@ def split_data(input_path, intensity_threshold):
     data['label'] = (data['intensity_1'] >= intensity_threshold).astype(int)
 
     # first split: train/(valid+test) 70/30
+    print('Splitting training set...')
     sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
     for train_idx, temp_idx in sss.split(data, data['label']):
         train = data.iloc[train_idx]
         temp = data.iloc[temp_idx]
 
     # second split: valid/test 10/20
+    print('Splitting validation and test sets...')
     sss2 = StratifiedShuffleSplit(n_splits=1, test_size=2/3, random_state=42)
     for val_idx, test_idx in sss2.split(temp, temp['label']):
         valid = temp.iloc[val_idx]
         test = temp.iloc[test_idx]
 
     filename_coords = test[['filename_img', 'z', 'y', 'x', 'intensity_1']].values
+
+    print('\nTrain set distribution:')
+    print(train['label'].value_counts())
+    print('\nValid set distribution:')
+    print(valid['label'].value_counts())
+    print('\nTest set distribution:')
+    print(test['label'].value_counts())
 
     ## split on an image level
     #train = data[data['filename_img'].isin(train)].reset_index(drop=True)
@@ -132,6 +143,7 @@ class MLP(nn.Module):
 def main(**kwargs):
 
     assert kwargs['input_path'] is not None
+    assert kwargs['on_channel'] is not None
     assert kwargs['output_path'] is not None
     assert kwargs['intensity_thresh'] is not None
 
@@ -287,10 +299,12 @@ def parse_args():
                         help='Path to input file with features')
     parser.add_argument('--output_path', type=str, default=None,
                         help='Path to output folder')
-    parser.add_argument('--on_channel', type=int, default=0,
+    parser.add_argument('--on_channel', type=int, default=None,
                         help='Channel on which prediction is performed')
     parser.add_argument('--intensity_thresh', type=int, default=None,
                         help='Define the intensity threshold for binary classification')
+        # cerebral dataset 160
+        # breast dataset  2500
     parser.add_argument('--sample_confirm', type=str, default=None,
                         help='If unspecified, all data will be saved to a CSV file, if specified, only data for selected sample will be saved.')
     args = parser.parse_args()
