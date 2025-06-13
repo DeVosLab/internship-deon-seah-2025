@@ -12,7 +12,7 @@ import hdbscan
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from scipy.cluster.hierarchy import linkage, fcluster
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -65,7 +65,7 @@ def convert_coords(input_path, sample, coords_type, voxelsize=np.array((5, 0.64,
 
 # Bin angles into octants
 def get_octants(input_path, sample, coords_type):
-    dcoords, data = convert_coords(input_path, sample, coords_type)
+    dcoords, _ = convert_coords(input_path, sample, coords_type)
     dz, dy, dx = dcoords.T
 
     x_bin = (dx >= 0).astype(int) # 1 if x >=0, else 0
@@ -115,9 +115,9 @@ def perform_pca_umap(input_path, sample, method):
     return reduced_ft
 
 # With the option to perform HDBScan, cluster using HDBScan
-def perform_hdbscan(input_path, sample, method, cluster_reduced, do_dendro, clustering):
-    if clustering:
-        if cluster_reduced:
+def perform_hdbscan(input_path, sample, method, hdbscan_reduced, do_hdbscan):
+    if do_hdbscan:
+        if hdbscan_reduced:
             channel_ft = perform_pca_umap(input_path, sample, method)
         else:
             _, channel_ft = split_features(input_path, sample)
@@ -172,12 +172,11 @@ def main(**kwargs):
     sample = kwargs['sample']
     method = kwargs['method']
     coords_type = kwargs['coords_type']
-    clustering = kwargs['clustering']
-    cluster_reduced = kwargs['cluster_reduced']
+    do_hdbscan = kwargs['do_hdbscan']
+    hdbscan_reduced = kwargs['hdbscan_reduced']
     clustermap = kwargs['clustermap']
     n_levels = kwargs['n_levels']
     map_reduced = kwargs['map_reduced']
-    do_dendro = kwargs['do_dendro']
 
     print(f'Performing {method} on {sample} features...')
     components = perform_pca_umap(input_path, sample, method) # dimensionality-reduced features
@@ -214,7 +213,7 @@ def main(**kwargs):
                 g.figure.suptitle(f'Channel {channel} Clustermap: Level {level} ({n_clusters} clusters)',
                                   y=1.02)
                 
-                labels_dir = Path(output_path).joinpath(f'labels/{sample}')
+                labels_dir = Path(output_path).joinpath(f'labels/level_{level}/{sample}')
                 labels_dir.mkdir(exist_ok=True, parents=True)
                 plots_dir = Path(output_path).joinpath(f'plots/{sample}')
                 plots_dir.mkdir(exist_ok=True, parents=True) 
@@ -337,9 +336,9 @@ def main(**kwargs):
         plt.tight_layout()
 
     # perform HDBSCAN clustering
-    if clustering:
+    if do_hdbscan:
         print(f'Performing HDBSCAN clustering...')
-        clusterers, labels = perform_hdbscan(input_path, sample, method, cluster_reduced, do_dendro, clustering)
+        _, labels = perform_hdbscan(input_path, sample, method, hdbscan_reduced, do_hdbscan)
         num_plots, _ = split_features(input_path, sample)
         fig = plt.figure(figsize=(num_plots * 5, 5))
 
@@ -374,17 +373,6 @@ def main(**kwargs):
             df.to_csv(f'{labels_dir}/{time_stamp}_{sample}_labels_with_coords_channel_{channel}.csv', index=False)
             print(f'Saved labels and coordinates for channel {channel}')
 
-        # plot condensed cluster trees
-        if do_dendro:
-            for i, clusterer in enumerate(clusterers):
-                print(f'Plotting condensed cluster tree for channel {i}...')
-                plt.figure(figsize=(8, 6))
-                clusterer.condensed_tree_.plot(select_clusters=True)
-                plt.title(f'Condensed Cluster Tree - Channel {i}')
-                fig_path = f'{plots_dir}/{time_stamp}_{sample}_HDBSCAN_cluster_tree_channel_{channel}.png'
-                plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-                plt.tight_layout()
-
     else:
         pass
 
@@ -404,12 +392,10 @@ def parse_args():
     parser.add_argument('--coords_type', type=str, default='cartesian',
                         choices=['polar', 'cylindrical', 'cartesian'],
                         help='Type of coordinates to colour points by')
-    parser.add_argument('--clustering', action='store_true',
+    parser.add_argument('--do_hdbscan', action='store_true',
                         help='Cluster with HDBSCAN')
-    parser.add_argument('--cluster_reduced', action='store_true',
+    parser.add_argument('--hdbscan_reduced', action='store_true',
                         help='Perform HDBSCAN clustering on dimensionality-reduced data (after PCA/UMAP)')
-    parser.add_argument('--do_dendro', action='store_true',
-                        help='Plots a dendrogram based on the internally constructed cluster hierarchy tree.')
     parser.add_argument('--clustermap', action='store_true',
                         help='Plots a hierarchically-clustered heatmap')
     parser.add_argument('--n_levels', type=int,
