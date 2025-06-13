@@ -10,7 +10,7 @@ import pandas as pd
 import h5py
 
 # Load image file and preprocess image from the HDF5 file
-def preprocess_image(h5_path, memb_size, extracted_slices, sample, do_mip):
+def preprocess_image(h5_path, memb_size, extract_slices, sample, do_mip):
     if Path(h5_path).is_file():
         f = h5py.File(h5_path, 'r')
 
@@ -27,7 +27,7 @@ def preprocess_image(h5_path, memb_size, extracted_slices, sample, do_mip):
     with f:
 
         # visualise only the extracted slices
-        if extracted_slices:
+        if extract_slices:
             group = f[sample]
 
             img = group['img'][()]
@@ -74,7 +74,6 @@ def main(**kwargs):
     assert kwargs['h5_path'] is not None
     assert kwargs['labels_path'] is not None
     assert kwargs['sample'] is not None
-    assert kwargs['voxelsize'] is not None
 
     h5_path = kwargs['h5_path']
     memb_size = kwargs['memb_size']
@@ -84,10 +83,10 @@ def main(**kwargs):
     hide_all_points = kwargs['hide_all_points']
     point_size = kwargs['point_size']
     voxsize = kwargs['voxelsize']
-    extracted_slices = kwargs['extracted_slices']
+    extract_slices = kwargs['extract_slices']
     do_mip = kwargs['do_mip']
 
-    image = preprocess_image(h5_path, memb_size, extracted_slices, sample, do_mip)
+    image = preprocess_image(h5_path, memb_size, extract_slices, sample, do_mip)
     channel_labels = read_labels_coords(labels_path, sample)
 
     # Initialise napari
@@ -130,7 +129,7 @@ def main(**kwargs):
     napari.run()
 
 def parse_args():
-    parser = ArgumentParser(description='Visualisation of Sample with Labelled Points in napari')
+    parser = ArgumentParser(description='Visualisation of sample image with points coloured by clusters in napari')
     parser.add_argument('--h5_path', type=str, default=None,
                         help='Path to HDF5 file')
     parser.add_argument('--memb_size', type=float, default=3.5,
@@ -145,9 +144,9 @@ def parse_args():
                         help='Hides all points layers, can be manually unhidden')
     parser.add_argument('--point_size', type=int, default=10,
                         help='Specify size of each point in points layer')
-    parser.add_argument('--voxelsize', type=float, nargs='+', default=None,
+    parser.add_argument('--voxelsize', type=float, nargs='+', default=[1, 1, 1],
                         help='Defines the voxel size of the image in Z, Y, X')
-    parser.add_argument('--extracted_slices', action='store_true',
+    parser.add_argument('--extract_slices', action='store_true',
                         help='Only visualises extracted slices')
     parser.add_argument('--do_mip', action='store_true',
                         help='Performs maximum intensity projection along z-axis')
