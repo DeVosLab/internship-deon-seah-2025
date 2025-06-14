@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score, f1_score
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -157,7 +157,7 @@ def main(**kwargs):
 
     train, valid, test, pos_weight, filename_coords = process_features(input_path, on_channel, intensity_threshold)
 
-    print('Epoch\tTrain loss\tValid loss\tValid acc. (%)')
+    print('Epoch\tTrain loss\tValid loss\tF1 score')
 
     model = MLP()
     optimiser = torch.optim.Adam(model.parameters(),
@@ -191,8 +191,8 @@ def main(**kwargs):
             train_losses.append(loss.item())
 
         model.eval()
-        correct = 0
-        total = 0
+        val_preds = []
+        val_targets = []
 
         # validate the model
         with torch.no_grad():
@@ -201,15 +201,15 @@ def main(**kwargs):
                 loss = loss_fn(outputs, labels.view(-1, 1))
                 valid_losses.append(loss.item())
 
-                predicted = (outputs > 0.5).int().view(-1)
-                labels = labels.view(-1)
-                correct += (predicted == labels).sum().item()
-                total += labels.size(0)
+                probs = torch.sigmoid(outputs).view(-1)
+                preds = (probs > 0.5).int()
+
+                val_preds.extend(preds.cpu().numpy())
+                val_targets.extend(labels.view(-1).cpu().numpy())
 
         avg_val_loss = np.mean(valid_losses)
-        accuracy = 100*correct/total
-        valid_acc_list.append(accuracy)
-        print(f'{epoch+1}\t{np.mean(train_losses):.4f}\t\t{np.mean(valid_losses):.4f}\t\t{accuracy:.2f}')
+        f1 = f1_score(val_targets, val_preds)
+        print(f'{epoch+1}\t{np.mean(train_losses):.4f}\t\t{np.mean(valid_losses):.4f}\t\t{f1:.3f}')
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
