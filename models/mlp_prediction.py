@@ -168,8 +168,6 @@ def main(**kwargs):
                     gamma=0.5)
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    valid_acc_list = []
-
     epochs = 50
     best_val_loss = float('inf')
     patience = 8
@@ -208,7 +206,7 @@ def main(**kwargs):
                 val_targets.extend(labels.view(-1).cpu().numpy())
 
         avg_val_loss = np.mean(valid_losses)
-        f1 = f1_score(val_targets, val_preds)
+        f1 = f1_score(val_targets, val_preds, average='weighted')
         print(f'{epoch+1}\t{np.mean(train_losses):.4f}\t\t{np.mean(valid_losses):.4f}\t\t{f1:.3f}')
 
         if avg_val_loss < best_val_loss:
