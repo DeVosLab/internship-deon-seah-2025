@@ -128,11 +128,11 @@ def main(**kwargs):
     val_predict = svc_model.predict(X_valid)
     prediction = svc_model.predict(X_test)
 
-    print('\nClassification report for validation set:')
-    print(classification_report(y_valid, val_predict))
+    print('\nClassification report for test set:')
+    print(classification_report(y_test, prediction))
 
     print('Confusion matrix for test set:')
-    print(confusion_matrix(y_test, prediction, normalize='true'))
+    print(confusion_matrix(y_test, prediction))
 
     # get predicted probabilities for test set
     y_scores = svc_model.predict_proba(X_test)[:, 1]

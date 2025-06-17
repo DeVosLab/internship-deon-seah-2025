@@ -241,7 +241,7 @@ def main(**kwargs):
             all_probs.extend(probs.cpu().numpy().flatten())
 
         print('\nConfusion matrix for test set:')
-        print(confusion_matrix(all_labels, all_preds, normalize='true'),'\n')
+        print(confusion_matrix(all_labels, all_preds),'\n')
 
         fig_dir = Path(output_path)
         fig_dir.mkdir(exist_ok=True, parents=True)
